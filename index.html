@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Expense Tracker</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="รายจ่าย">
+<meta name="theme-color" content="#1c1a16">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { background: #e8e3db; display: flex; align-items: flex-start; justify-content: center;
+    min-height: 100vh; overflow-y: auto; padding: 24px 0; font-family: 'DM Sans', sans-serif; }
+  ::-webkit-scrollbar { display: none; }
+  button, input, select, textarea { font-family: 'DM Sans', sans-serif; }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes spin    { to   { transform: rotate(360deg); } }
+  @keyframes popIn   { 0%{transform:scale(.7);opacity:0} 60%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useRef, useEffect, useCallback } = React;
+
+/* ─────────────────────────────────────────────────────────
+   TWEAKS PANEL (inlined from tweaks-panel.jsx)
+───────────────────────────────────────────────────────── */
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+  .twk-field{appearance:none;box-sizing:border-box;width:100%;min-width:0;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2}
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+  .twk-chips{display:flex;gap:6px}
+  .twk-chip{position:relative;appearance:none;flex:1;min-width:0;height:46px;
+    padding:0;border:0;border-radius:6px;overflow:hidden;cursor:default;
+    box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.06);transition:transform .12s}
+  .twk-chip:hover{transform:translateY(-1px)}
+  .twk-chip[data-on="1"]{box-shadow:0 0 0 1.5px rgba(0,0,0,.85),0 2px 6px rgba(0,0,0,.15)}
+  .twk-chip svg{position:absolute;top:6px;left:6px;width:13px;height:13px;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+  .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;background:transparent}
+  .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
+  .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
+`;
+
+function useTweaks(defaults) {
+  const [values, setValues] = useState(defaults);
+  const setTweak = useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues(prev => ({ ...prev, ...edits }));
+  }, []);
+  return [values, setTweak];
+}
+
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = useState(false);
+  const dragRef = useRef(null);
+  const offsetRef = useRef({ x: 16, y: 16 });
+  const PAD = 16;
+  const clampToViewport = useCallback(() => {
+    const panel = dragRef.current; if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    offsetRef.current = {
+      x: Math.min(Math.max(PAD, window.innerWidth - w - PAD), Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(Math.max(PAD, window.innerHeight - h - PAD), Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(clampToViewport) : null;
+    if (ro) { ro.observe(document.documentElement); return () => ro.disconnect(); }
+    window.addEventListener('resize', clampToViewport);
+    return () => window.removeEventListener('resize', clampToViewport);
+  }, [open, clampToViewport]);
+  const onDragStart = e => {
+    const panel = dragRef.current; if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = ev => {
+      offsetRef.current = { x: startRight - (ev.clientX - sx), y: startBottom - (ev.clientY - sy) };
+      clampToViewport();
+    };
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ position:'fixed', bottom:16, right:16, zIndex:2147483645,
+          background:'rgba(250,249,247,0.9)', border:'.5px solid rgba(255,255,255,.6)',
+          borderRadius:10, padding:'6px 12px', fontSize:12, fontWeight:600,
+          cursor:'pointer', backdropFilter:'blur(16px)', boxShadow:'0 4px 16px rgba(0,0,0,.12)',
+          display: open ? 'none' : 'block' }}>
+        ⚙ Tweaks
+      </button>
+      {open && (
+        <div ref={dragRef} className="twk-panel" style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+          <div className="twk-hd" onMouseDown={onDragStart}>
+            <b>{title}</b>
+            <button className="twk-x" onClick={() => setOpen(false)}>✕</button>
+          </div>
+          <div className="twk-body">{children}</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function TweakSection({ label, children }) {
+  return <><div className="twk-sect">{label}</div>{children}</>;
+}
+function TweakRow({ label, value, children }) {
+  return (
+    <div className="twk-row">
+      <div className="twk-lbl"><span>{label}</span>{value != null && <span className="twk-val">{value}</span>}</div>
+      {children}
+    </div>
+  );
+}
+function TweakSlider({ id, label, min=0, max=100, step=1, unit='', value, onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={e => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+function __twkIsLight(hex) {
+  const h = String(hex).replace('#','');
+  const x = h.length===3 ? h.replace(/./g,c=>c+c) : h.padEnd(6,'0');
+  const n = parseInt(x.slice(0,6),16);
+  if (Number.isNaN(n)) return true;
+  const r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  return r*299+g*587+b*114>148000;
+}
+const __TwkCheck = ({light}) => (
+  <svg viewBox="0 0 14 14" aria-hidden="true">
+    <path d="M3 7.2 5.8 10 11 4.2" fill="none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+          stroke={light?'rgba(0,0,0,.78)':'#fff'}/>
+  </svg>
+);
+function TweakColor({ id, label, value, options, onChange }) {
+  if (!options || !options.length) {
+    return (
+      <div className="twk-row twk-row-h">
+        <div className="twk-lbl"><span>{label}</span></div>
+        <input type="color" className="twk-swatch" value={value} onChange={e => onChange(e.target.value)}/>
+      </div>
+    );
+  }
+  const key = o => String(JSON.stringify(o)).toLowerCase();
+  const cur = key(value);
+  return (
+    <TweakRow label={label}>
+      <div className="twk-chips">
+        {options.map((o,i) => {
+          const colors = Array.isArray(o) ? o : [o];
+          const [hero] = colors;
+          const on = key(o)===cur;
+          return (
+            <button key={i} className="twk-chip" data-on={on?'1':'0'}
+                    style={{ background: hero }} onClick={() => onChange(o)}>
+              {on && <__TwkCheck light={__twkIsLight(hero)}/>}
+            </button>
+          );
+        })}
+      </div>
+    </TweakRow>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
+   APP
+───────────────────────────────────────────────────────── */
+const TWEAK_DEFAULTS = {
+  "accent": "#6c63ff",
+  "heroColor": "#1c1a16",
+  "bgColor": "#faf8f4",
+  "fontScale": 1
+};
+
+const mk = t => ({
+  bg: t.bgColor, surface: '#ffffff', surfaceAlt: '#f2ede5',
+  hero: t.heroColor, accent: t.accent, accentBg: t.accent + '18',
+  text: '#1a1714', textMid: '#6b5f55', textDim: '#a89b8f',
+  border: 'rgba(0,0,0,0.07)', shadow: '0 1px 3px rgba(0,0,0,0.07), 0 6px 16px rgba(0,0,0,0.05)',
+});
+
+/* ── SEED DATA ── */
+const INIT_CATS = [
+  { id:'food',        name:'Food & Dining',  th:'อาหาร',       icon:'🍜', color:'#f4875a', budget:6000,  spent:0, count:0, items:[
+    {id:1,  desc:'MK Suki',        date:'May 24', amt:0,  receipt:true },
+    {id:2,  desc:'Tops Market',    date:'May 22', amt:0,  receipt:true },
+    {id:3,  desc:'Grab Food',      date:'May 21', amt:0,  receipt:false},
+    {id:4,  desc:'After You',      date:'May 18', amt:0,  receipt:true },
+    {id:5,  desc:"Lotus's",        date:'May 15', amt:0, receipt:true },
+  ]},
+  { id:'drinks',      name:'Drinks',         th:'เครื่องดื่ม',  icon:'☕', color:'#3ecfcf', budget:1000,  spent:0,  count:0,  items:[
+    {id:20, desc:'Starbucks',      date:'May 23', amt:0,  receipt:true },
+    {id:21, desc:'Smoothie',       date:'May 20', amt:0,   receipt:false},
+    {id:22, desc:'Iced Coffee ×3', date:'May 18', amt:0,  receipt:false},
+    {id:23, desc:'Chatime',        date:'May 14', amt:0,  receipt:false},
+    {id:24, desc:'Café de Coral',  date:'May 11', amt:0,  receipt:true },
+  ]},
+  { id:'transport',   name:'Transport',      th:'เดินทาง',      icon:'🚇', color:'#5b9cf6', budget:2000,  spent:0, count:0,  items:[
+    {id:6,  desc:'BTS/MRT',        date:'May 23', amt:0,  receipt:false},
+    {id:7,  desc:'Grab ×5',        date:'May 22', amt:0,  receipt:true },
+    {id:8,  desc:'Taxi',           date:'May 19', amt:0,  receipt:false},
+    {id:9,  desc:'Airport Link',   date:'May 10', amt:0,   receipt:false},
+  ]},
+  { id:'fuel',        name:'Fuel',           th:'น้ำมัน',       icon:'⛽', color:'#f5a623', budget:2000,  spent:0, count:0,  items:[
+    {id:25, desc:'PTT Station',    date:'May 22', amt:0,  receipt:true },
+    {id:26, desc:'Shell Station',  date:'May 15', amt:0,  receipt:true },
+    {id:27, desc:'Bangchak',       date:'May 8',  amt:0,  receipt:false},
+  ]},
+  { id:'housing',     name:'Housing / Rent', th:'ที่พัก',       icon:'🏠', color:'#9b7de8', budget:10000, spent:0, count:0,  items:[
+    {id:10, desc:'Monthly Rent',   date:'May 1',  amt:0, receipt:true },
+  ]},
+  { id:'electricity', name:'Electricity',    th:'ค่าไฟ',        icon:'⚡', color:'#fbbf24', budget:1500,  spent:0, count:0,  items:[
+    {id:11, desc:'Provincial EA',  date:'May 5',  amt:0, receipt:true },
+  ]},
+  { id:'water',       name:'Water',          th:'น้ำประปา',     icon:'💧', color:'#38bdf8', budget:500,   spent:0,  count:0,  items:[
+    {id:12, desc:'MWA Water Bill', date:'May 5',  amt:0,  receipt:true },
+  ]},
+  { id:'health',      name:'Health',         th:'สุขภาพ',       icon:'💊', color:'#4dcaa3', budget:2000,  spent:0, count:0,  items:[
+    {id:13, desc:'Pharmacy',       date:'May 20', amt:0,  receipt:true },
+    {id:14, desc:'Fitness First',  date:'May 1',  amt:0,  receipt:true },
+  ]},
+  { id:'entertain',   name:'Entertainment',  th:'บันเทิง',      icon:'🎬', color:'#f4a9d0', budget:1500,  spent:0,  count:0,  items:[
+    {id:15, desc:'SF Cinema',      date:'May 16', amt:0,  receipt:false},
+    {id:16, desc:'Netflix',        date:'May 1',  amt:0,  receipt:true },
+    {id:17, desc:'Concert',        date:'May 12', amt:0,  receipt:false},
+  ]},
+  { id:'credit',      name:'Credit Card',    th:'บัตรเครดิต',   icon:'💳', color:'#f43f5e', budget:3000,  spent:0, count:0,  items:[
+    {id:28, desc:'KBank Mastercard',date:'May 10', amt:0, receipt:true },
+    {id:29, desc:'SCB Visa',        date:'May 10', amt:0, receipt:true },
+  ]},
+  { id:'other',       name:'Others',         th:'อื่นๆ',        icon:'📦', color:'#94a3b8', budget:500,   spent:0,  count:0,  items:[
+    {id:30, desc:'Parcel',          date:'May 21', amt:0,  receipt:false},
+    {id:31, desc:'Stationery',      date:'May 17', amt:0,   receipt:false},
+    {id:32, desc:'Miscellaneous',   date:'May 12', amt:0,   receipt:false},
+  ]},
+];
+const WEEKLY = [0, 0, 0, 0, 0, 0];
+const HISTORY = [
+  {label:'มกราคม',     spent:0, budget:0},
+  {label:'กุมภาพันธ์', spent:0, budget:0},
+  {label:'มีนาคม',     spent:0, budget:0},
+  {label:'เมษายน',     spent:0, budget:0},
+];
+const INCOME_HISTORY = [
+  {label:'มกราคม',     income:0},
+  {label:'กุมภาพันธ์', income:0},
+  {label:'มีนาคม',     income:0},
+  {label:'เมษายน',     income:0},
+];
+const INIT_INCOME_CATS = [
+  { id:'salary',   name:'Salary',    th:'เงินเดือน', icon:'💼', color:'#10b981', items:[
+    {id:101, desc:'Monthly Salary',  date:'May 1',  amt:0, receipt:true },
+  ]},
+  { id:'family',   name:'Family',    th:'ครอบครัว',  icon:'🏦', color:'#818cf8', items:[
+    {id:102, desc:'From Parents',    date:'May 10', amt:0,  receipt:false},
+  ]},
+  { id:'parttime', name:'Part-time', th:'พาร์ทไทม์', icon:'🎯', color:'#f59e0b', items:[
+    {id:103, desc:'Freelance Design',date:'May 15', amt:0,  receipt:false},
+    {id:104, desc:'Online Tutoring', date:'May 20', amt:0,  receipt:false},
+  ]},
+];
+const fmt = n => '฿' + Number(n).toLocaleString('th-TH');
+
+/* ── SHARED COMPONENTS ── */
+const Bar = ({ pct, color, h=4, bg='rgba(0,0,0,0.07)' }) => (
+  <div style={{ height:h, background:bg, borderRadius:h, overflow:'hidden' }}>
+    <div style={{ height:'100%', width:`${Math.min(pct,100)}%`, background:color, borderRadius:h, transition:'width .4s ease' }}/>
+  </div>
+);
+
+const Chip = ({ label, color, onClick }) => (
+  <button onClick={onClick} style={{ display:'flex', alignItems:'center', gap:4,
+    background:'rgba(255,255,255,0.1)', border:'none', borderRadius:20, padding:'3px 9px 3px 6px', cursor:'pointer' }}>
+    <span style={{ width:6, height:6, borderRadius:'50%', background:color, display:'inline-block', flexShrink:0 }}/>
+    <span style={{ fontSize:11, color:'rgba(255,255,255,0.75)', fontWeight:500 }}>{label}</span>
+  </button>
+);
+
+const Donut = ({ cats, size=80 }) => {
+  const total = cats.reduce((s,c)=>s+c.spent,0);
+  const r=30, cx=40, cy=40, sw=11, circ=2*Math.PI*r; let off=0;
+  const fmt1k = n => Math.abs(n)>=1000 ? `${(n/1000).toFixed(0)}k` : `${n}`;
+  return (
+    <svg width={size} height={size} viewBox="0 0 80 80">
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={sw}/>
+      {cats.map((c,i) => {
+        const dash=total>0?(c.spent/total)*circ:0;
+        const el=<circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={c.color}
+          strokeWidth={sw-1} strokeDasharray={`${dash} ${circ-dash}`}
+          strokeDashoffset={-off} transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="round"/>;
+        off+=dash; return el;
+      })}
+      <text x={cx} y={cy-4} textAnchor="middle" dominantBaseline="middle"
+        style={{ fontFamily:'DM Sans,sans-serif', fontSize:6.5, fill:'rgba(255,255,255,0.45)', fontWeight:500 }}>
+        {cats[0]?._isIncome ? 'รายรับ' : 'รายจ่าย'}
+      </text>
+      <text x={cx} y={cy+6} textAnchor="middle" dominantBaseline="middle"
+        style={{ fontFamily:'DM Sans,sans-serif', fontSize:10, fill:'#fff', fontWeight:700 }}>
+        {cats[0]?._isIncome ? `+${fmt1k(total)}` : fmt1k(total)}
+      </text>
+    </svg>
+  );
+};
+
+/* ── ADD EXPENSE SHEET ── */
+const AddExpenseSheet = ({ C, T, cats, incomeCats, onAdd, onAddIncome, onClose }) => {
+  const [type, setType]   = useState('expense');
+  const [form, setForm]   = useState({ catId:'food', desc:'', amt:'', date:'May 27' });
+  const [img, setImg]     = useState(null);
+  const [status, setStatus] = useState(null);
+  const [entered, setEntered] = useState(false);
+  const fileRef = useRef();
+  const set = (k,v) => setForm(f => ({...f,[k]:v}));
+  const activeCats = type === 'income' ? incomeCats : cats;
+  const switchType = t => {
+    setType(t);
+    setForm({ catId: t==='income' ? 'salary' : 'food', desc:'', amt:'', date:'May 27' });
+    setImg(null); setStatus(null);
+  };
+
+  useEffect(() => {
+    const id = setTimeout(() => setEntered(true), 30);
+    return () => clearTimeout(id);
+  }, []);
+
+  const handleFile = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      const dataUrl = ev.target.result;
+      setImg(dataUrl);
+      setStatus('scanning');
+      try {
+        if (window.claude) {
+          const result = await window.claude.complete({
+            messages:[{ role:'user', content:[
+              { type:'image', source:{ type:'base64', media_type:file.type||'image/jpeg', data:dataUrl.split(',')[1] }},
+              { type:'text', text:'Extract from this receipt: store/merchant name (concise, max 20 chars), total amount paid as a plain number in Thai Baht (no currency symbol), and the date formatted as "May DD". Also pick the best matching category from exactly: food, drinks, transport, fuel, housing, electricity, water, health, entertain, credit, other. Reply ONLY with valid JSON, no markdown fences: {"desc":"MK Suki","amt":680,"date":"May 24","cat":"food"}' }
+            ]}]
+          });
+          const match = result.match(/\{[\s\S]*?\}/);
+          if (match) {
+            const p = JSON.parse(match[0]);
+            const catId = cats.find(c=>c.id===p.cat) ? p.cat : 'food';
+            if (p.desc && Number(p.amt) > 0) {
+              onAdd({ catId, item:{ id:Date.now(), desc:p.desc, amt:Math.round(Number(p.amt)), date:p.date||'May 27', receipt:true }});
+              setStatus('saved');
+              setTimeout(onClose, 1100);
+              return;
+            }
+            setForm({ catId, desc:p.desc||'', amt:p.amt?String(Math.round(p.amt)):'', date:p.date||'May 27' });
+          }
+        }
+      } catch(err) { console.warn('Scan err:', err); }
+      setStatus('manual');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = () => {
+    if (!form.desc.trim() || !Number(form.amt)) return;
+    const item = { id:Date.now(), desc:form.desc, amt:Number(form.amt), date:form.date, receipt:!!img };
+    if (type === 'income') onAddIncome({ catId:form.catId, item });
+    else onAdd({ catId:form.catId, item });
+    setStatus('saved');
+    setTimeout(onClose, 900);
+  };
+
+  const valid = form.desc.trim() && Number(form.amt) > 0;
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.5)', zIndex:20,
+        opacity: entered ? 1 : 0, transition:'opacity .2s ease' }}/>
+      <div style={{ position:'absolute', bottom:0, left:0, right:0, background:C.surface,
+        borderRadius:'20px 20px 0 0', zIndex:21,
+        transform: entered ? 'translateY(0)' : 'translateY(100%)',
+        transition:'transform .3s cubic-bezier(.32,1,.4,1)',
+        display:'flex', flexDirection:'column', maxHeight:'92%' }}>
+
+        <div style={{ display:'flex', justifyContent:'center', padding:'10px 0 2px' }}>
+          <div style={{ width:36, height:4, borderRadius:2, background:C.surfaceAlt }}/>
+        </div>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'4px 16px 8px' }}>
+          <span style={{ fontSize:16*T.fontScale, fontWeight:700, color:C.text }}>เพิ่มรายการ</span>
+          <button onClick={onClose} style={{ width:28, height:28, borderRadius:'50%', background:C.surfaceAlt,
+            border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+            color:C.textMid, fontSize:14 }}>✕</button>
+        </div>
+
+        <div style={{ display:'flex', background:C.surfaceAlt, borderRadius:10, padding:3, margin:'0 16px 6px' }}>
+          {[['expense','💸 รายจ่าย'],['income','💰 รายรับ']].map(([t,label]) => (
+            <button key={t} onClick={() => switchType(t)}
+              style={{ flex:1, padding:'8px', borderRadius:8, border:'none', cursor:'pointer',
+                background: type===t ? C.surface : 'transparent',
+                fontWeight: type===t ? 600 : 400,
+                color: type===t ? (t==='income' ? '#10b981' : C.accent) : C.textDim,
+                boxShadow: type===t ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+                transition:'all .15s', fontSize:13 }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {status === 'saved' ? (
+          <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:'32px 24px' }}>
+            <div style={{ width:56, height:56, borderRadius:'50%', background:'#4dcaa3',
+              display:'flex', alignItems:'center', justifyContent:'center', animation:'popIn .35s ease' }}>
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <span style={{ fontSize:16, fontWeight:600, color:C.text }}>บันทึกแล้ว!</span>
+            <span style={{ fontSize:13, color:C.textDim }}>รายการถูกเพิ่มเรียบร้อย</span>
+          </div>
+        ) : (
+          <div style={{ overflowY:'auto', padding:'0 16px 28px', display:'flex', flexDirection:'column', gap:14 }}>
+            {type === 'expense' && <div>
+              <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>ใบเสร็จ · AI สแกนอัตโนมัติ</div>
+              <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display:'none' }}/>
+              {!img ? (
+                <button onClick={() => fileRef.current.click()}
+                  style={{ width:'100%', height:88, borderRadius:12, border:`2px dashed ${C.accent}55`,
+                    background:C.accentBg, cursor:'pointer', display:'flex', flexDirection:'column',
+                    alignItems:'center', justifyContent:'center', gap:6 }}>
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke={C.accent} strokeWidth="1.8" strokeLinecap="round">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  <span style={{ fontSize:13, color:C.accent, fontWeight:600 }}>อัปโหลดใบเสร็จ</span>
+                  <span style={{ fontSize:11, color:C.textDim }}>AI จะกรอกข้อมูลและเพิ่มรายการให้อัตโนมัติ</span>
+                </button>
+              ) : (
+                <div style={{ position:'relative', height:100, borderRadius:12, overflow:'hidden', border:`1.5px solid ${C.border}` }}>
+                  <img src={img} alt="receipt" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                  {status === 'scanning' && (
+                    <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.58)',
+                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8 }}>
+                      <div style={{ width:26, height:26, border:'3px solid rgba(255,255,255,0.2)',
+                        borderTopColor:'#fff', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+                      <span style={{ fontSize:12, color:'#fff', fontWeight:500 }}>กำลังสแกนใบเสร็จ…</span>
+                    </div>
+                  )}
+                  {status === 'manual' && (
+                    <button onClick={() => fileRef.current.click()}
+                      style={{ position:'absolute', top:6, right:6, background:'rgba(0,0,0,0.5)',
+                        border:'none', borderRadius:6, padding:'2px 8px', cursor:'pointer', color:'#fff', fontSize:11 }}>
+                      เปลี่ยน
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>}
+
+            {(status === 'manual' || !img) && <>
+              <div>
+                <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>{type==='income' ? 'ประเภทรายรับ' : 'หมวดหมู่'}</div>
+                <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                  {activeCats.map(c => (
+                    <button key={c.id} onClick={() => set('catId', c.id)}
+                      style={{ display:'flex', alignItems:'center', gap:4, padding:'5px 10px', borderRadius:20,
+                        border:`1.5px solid ${form.catId===c.id ? c.color : C.border}`,
+                        background: form.catId===c.id ? c.color+'18' : C.surface, cursor:'pointer', transition:'all .15s' }}>
+                      <span style={{ fontSize:13 }}>{c.icon}</span>
+                      <span style={{ fontSize:11, fontWeight:form.catId===c.id?600:400,
+                        color:form.catId===c.id?c.color:C.textMid }}>{c.th}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>รายละเอียด</div>
+                <input value={form.desc} onChange={e => set('desc', e.target.value)}
+                  placeholder="เช่น MK Suki, Grab Food…"
+                  style={{ width:'100%', padding:'10px 12px', borderRadius:10, fontSize:14,
+                    border:`1.5px solid ${C.border}`, background:C.bg, color:C.text, outline:'none' }}
+                  onFocus={e => e.target.style.borderColor=C.accent}
+                  onBlur={e => e.target.style.borderColor=C.border}
+                />
+              </div>
+              <div style={{ display:'flex', gap:10 }}>
+                <div style={{ flex:1.4 }}>
+                  <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>จำนวนเงิน (฿)</div>
+                  <input value={form.amt} onChange={e => set('amt', e.target.value.replace(/[^0-9.]/g,''))}
+                    placeholder="0" type="number" inputMode="decimal"
+                    style={{ width:'100%', padding:'10px 12px', borderRadius:10, fontSize:14,
+                      border:`1.5px solid ${C.border}`, background:C.bg, color:C.text, outline:'none' }}
+                    onFocus={e => e.target.style.borderColor=C.accent}
+                    onBlur={e => e.target.style.borderColor=C.border}
+                  />
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>วันที่</div>
+                  <input value={form.date} onChange={e => set('date', e.target.value)}
+                    placeholder="May 27"
+                    style={{ width:'100%', padding:'10px 12px', borderRadius:10, fontSize:14,
+                      border:`1.5px solid ${C.border}`, background:C.bg, color:C.text, outline:'none' }}
+                    onFocus={e => e.target.style.borderColor=C.accent}
+                    onBlur={e => e.target.style.borderColor=C.border}
+                  />
+                </div>
+              </div>
+              <button onClick={handleSave} disabled={!valid}
+                style={{ width:'100%', padding:'13px', borderRadius:12, border:'none',
+                  background: valid ? (type==='income' ? '#10b981' : C.accent) : C.border,
+                  color:'#fff', fontSize:14*T.fontScale, fontWeight:600,
+                  cursor: valid ? 'pointer' : 'default', transition:'background .2s' }}>
+                {type==='income' ? 'บันทึกรายรับ' : 'บันทึกรายจ่าย'}
+              </button>
+            </>}
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
+
+/* ── DASHBOARD ── */
+const Dashboard = ({ T, C, cats, incomeCats, totalSpent, totalBudget, totalIncome, onCat }) => {
+  const [open, setOpen]             = useState({ food:true });
+  const [incomeOpen, setIncomeOpen] = useState({ salary:true });
+  const [view, setView]             = useState('expense');
+  const MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน'];
+  const [mo, setMo]   = useState(4);
+  const maxW          = Math.max(...WEEKLY);
+  const topExp        = [...cats].sort((a,b)=>b.spent-a.spent).slice(0,5);
+  const maxExp        = Math.max(...topExp.map(c=>c.spent), 1);
+  const incTotal      = incomeCats.reduce((s,c)=>s+c.items.reduce((ss,i)=>ss+i.amt,0),0);
+  const INC_WEEKLY    = [0, 0, 0, 0, 0, 0];
+  const maxIW         = Math.max(...INC_WEEKLY);
+
+  const SORT_LABELS     = ['จัดเรียง ↕','มาก → น้อย ↓','น้อย → มาก ↑','เกินงบก่อน ⚠'];
+  const INC_SORT_LABELS = ['จัดเรียง ↕','มาก → น้อย ↓','น้อย → มาก ↑'];
+  const [sortMode,    setSortMode]    = useState(0);
+  const [incSortMode, setIncSortMode] = useState(0);
+
+  const sortedCats = useMemo(() => {
+    if (sortMode===1) return [...cats].sort((a,b)=>b.spent-a.spent);
+    if (sortMode===2) return [...cats].sort((a,b)=>a.spent-b.spent);
+    if (sortMode===3) return [...cats].sort((a,b)=>(b.spent/b.budget)-(a.spent/a.budget));
+    return cats;
+  }, [cats, sortMode]);
+
+  const sortedIncCats = useMemo(() => {
+    const t = c => c.items.reduce((s,i)=>s+i.amt,0);
+    if (incSortMode===1) return [...incomeCats].sort((a,b)=>t(b)-t(a));
+    if (incSortMode===2) return [...incomeCats].sort((a,b)=>t(a)-t(b));
+    return incomeCats;
+  }, [incomeCats, incSortMode]);
+
+  return (
+    <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+      {/* HERO */}
+      <div style={{ background:C.hero, padding:'0 16px 14px', flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginBottom:10 }}>
+          <button onClick={()=>setMo(m=>Math.max(0,m-1))} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.35)', fontSize:20, cursor:'pointer', padding:'2px 6px' }}>‹</button>
+          <span style={{ fontSize:13*T.fontScale, fontWeight:500, color:'rgba(255,255,255,0.65)' }}>{MONTHS[mo]} 2569</span>
+          <button onClick={()=>setMo(m=>Math.min(5,m+1))} style={{ background:'none', border:'none', color:'rgba(255,255,255,0.35)', fontSize:20, cursor:'pointer', padding:'2px 6px' }}>›</button>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+          <Donut cats={view==='income'
+            ? incomeCats.map(c=>({id:c.id,color:c.color,spent:c.items.reduce((s,i)=>s+i.amt,0),_isIncome:true}))
+            : cats} size={78}/>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:10*T.fontScale, color:'rgba(255,255,255,0.4)', letterSpacing:'.07em', textTransform:'uppercase', fontWeight:500 }}>คงเหลือสุทธิ</div>
+            <div style={{ fontSize:26*T.fontScale, fontWeight:700, color:'#fff', lineHeight:1.1 }}>{fmt(totalIncome - totalSpent)}</div>
+            <div style={{ display:'flex', gap:10, margin:'4px 0 6px' }}>
+              <span style={{ fontSize:11, color:'#6ee7b7', fontWeight:500 }}>↑ {fmt(totalIncome)}</span>
+              <span style={{ fontSize:11, color:'rgba(255,140,140,0.85)', fontWeight:500 }}>↓ {fmt(totalSpent)}</span>
+            </div>
+            <Bar pct={totalSpent/Math.max(totalIncome,1)*100} color={C.accent} h={5} bg="rgba(255,255,255,0.12)"/>
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:5, marginTop:10, overflowX:'auto', paddingBottom:3, scrollbarWidth:'none' }}>
+          {view==='income'
+            ? incomeCats.map(c => <Chip key={c.id} label={c.th} color={c.color} onClick={()=>{}}/>)
+            : cats.map(c => <Chip key={c.id} label={c.th} color={c.color} onClick={()=>onCat(c.id)}/>)
+          }
+        </div>
+        <div style={{ marginTop:10, background:'rgba(255,255,255,0.06)', borderRadius:8, padding:'7px 10px 5px' }}>
+          <div style={{ fontSize:9*T.fontScale, color:'rgba(255,255,255,0.35)', textTransform:'uppercase', letterSpacing:'.06em', fontWeight:600 }}>
+            {view==='income' ? 'รายรับรายสัปดาห์' : 'รายจ่ายรายสัปดาห์'}
+          </div>
+          <div style={{ display:'flex', gap:5, alignItems:'flex-end', height:32, marginTop:5 }}>
+            {(view==='income' ? INC_WEEKLY : WEEKLY).map((v,i) => (
+              <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                <div style={{ width:'100%', height:v>0?Math.max(v/(view==='income'?maxIW:maxW)*24,3):2, borderRadius:2,
+                  background:v>0?(view==='income'?'#6ee7b7':C.accent):'rgba(255,255,255,0.1)' }}/>
+                <span style={{ fontSize:8, color:'rgba(255,255,255,0.3)' }}>W{i+1}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* VIEW TABS */}
+      <div style={{ display:'flex', background:C.surface, borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
+        {[['expense','💸 รายจ่าย'],['income','💰 รายรับ']].map(([v,label]) => (
+          <button key={v} onClick={()=>setView(v)}
+            style={{ flex:1, padding:'10px 0', border:'none', background:'none', cursor:'pointer',
+              borderBottom: view===v ? `2.5px solid ${v==='income'?'#10b981':C.accent}` : '2.5px solid transparent',
+              color: view===v ? (v==='income'?'#10b981':C.accent) : C.textDim,
+              fontWeight: view===v ? 600 : 400, fontSize:13, transition:'color .15s' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* CONTENT */}
+      <div style={{ flex:1, overflowY:'auto', background:C.bg }}>
+        {view === 'expense' ? (<>
+          <div style={{ padding:'12px 16px', background:C.surface, borderBottom:`1px solid ${C.border}` }}>
+            <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>สัดส่วนรายจ่าย (Top 5)</div>
+            {topExp.map(cat => (
+              <div key={cat.id} style={{ marginBottom:8 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:3 }}>
+                  <span style={{ fontSize:12, color:C.text }}>{cat.icon} {cat.name}</span>
+                  <div>
+                    <span style={{ fontSize:12, fontWeight:700, color:cat.color }}>{fmt(cat.spent)}</span>
+                    <span style={{ fontSize:10, color:C.textDim, marginLeft:4 }}>{Math.round(cat.spent/totalSpent*100)}%</span>
+                  </div>
+                </div>
+                <Bar pct={cat.spent/maxExp*100} color={cat.color} bg={C.surfaceAlt} h={6}/>
+              </div>
+            ))}
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+            padding:'10px 16px 8px', position:'sticky', top:0, background:C.bg,
+            borderBottom:`1px solid ${C.border}`, zIndex:1 }}>
+            <span style={{ fontSize:14*T.fontScale, fontWeight:600, color:C.text }}>หมวดหมู่</span>
+            <button onClick={()=>setSortMode(m=>(m+1)%SORT_LABELS.length)}
+              style={{ fontSize:12, color:sortMode>0?C.accent:C.textDim, fontWeight:sortMode>0?600:400,
+                background:'none', border:'none', cursor:'pointer' }}>
+              {SORT_LABELS[sortMode]}
+            </button>
+          </div>
+          {sortedCats.map(cat => {
+            const pct=cat.spent/cat.budget*100, over=cat.spent>cat.budget, isOpen=!!open[cat.id];
+            return (
+              <div key={cat.id}>
+                <div onClick={()=>setOpen(o=>({...o,[cat.id]:!o[cat.id]}))}
+                  style={{ padding:'11px 16px 9px', background:C.surface, borderBottom:`1px solid ${C.border}`, cursor:'pointer' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ width:38, height:38, borderRadius:11, flexShrink:0, background:cat.color+'20',
+                      display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{cat.icon}</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
+                        <span style={{ fontSize:14*T.fontScale, fontWeight:600, color:C.text }}>{cat.name}</span>
+                        <span style={{ fontSize:14*T.fontScale, fontWeight:700, color:over?'#e05a4f':C.text }}>{fmt(cat.spent)}</span>
+                      </div>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:3 }}>
+                        <span style={{ fontSize:11, color:C.textDim }}>{cat.count} รายการ</span>
+                        <span style={{ fontSize:10, color:over?'#e05a4f':C.textDim }}>{over?'⚠ เกินงบ':`เหลือ ${fmt(cat.budget-cat.spent)}`}</span>
+                      </div>
+                      <div style={{ marginTop:5 }}><Bar pct={pct} color={over?'#e05a4f':cat.color} bg={C.surfaceAlt}/></div>
+                    </div>
+                    <span style={{ fontSize:10, color:C.textDim, marginLeft:6, display:'inline-block',
+                      transition:'transform .2s', transform:isOpen?'rotate(180deg)':'none' }}>▼</span>
+                  </div>
+                </div>
+                {isOpen && <>
+                  {cat.items.map(item => (
+                    <div key={item.id} style={{ display:'flex', alignItems:'center', gap:10,
+                      padding:'9px 16px 9px 13px', background:C.bg,
+                      borderBottom:`1px solid ${C.border}`, borderLeft:`3px solid ${cat.color}` }}>
+                      <div style={{ width:34, height:34, borderRadius:9, flexShrink:0,
+                        background:item.receipt?cat.color+'15':C.surfaceAlt,
+                        border:`1.5px solid ${item.receipt?cat.color+'35':C.border}`,
+                        display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>
+                        {item.receipt ? '🧾' : <span style={{ color:C.textDim, fontSize:13 }}>—</span>}
+                      </div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:13*T.fontScale, fontWeight:500, color:C.text }}>{item.desc}</div>
+                        <div style={{ fontSize:11, color:C.textDim, marginTop:1 }}>{item.date}</div>
+                      </div>
+                      <span style={{ fontSize:13*T.fontScale, fontWeight:600, color:C.text }}>{fmt(item.amt)}</span>
+                    </div>
+                  ))}
+                  <button onClick={()=>onCat(cat.id)}
+                    style={{ width:'100%', background:C.bg, border:'none', borderBottom:`1px solid ${C.border}`,
+                      padding:'8px 16px', display:'flex', justifyContent:'center', cursor:'pointer' }}>
+                    <span style={{ fontSize:12, color:C.accent, fontWeight:500 }}>ดูทั้งหมด {cat.count} รายการ →</span>
+                  </button>
+                </>}
+              </div>
+            );
+          })}
+          <div style={{ margin:'12px 16px', background:C.hero, borderRadius:12, padding:'13px 16px',
+            display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span style={{ fontSize:14*T.fontScale, fontWeight:500, color:'rgba(255,255,255,0.6)' }}>ยอดรวมรายจ่าย</span>
+            <span style={{ fontSize:18*T.fontScale, fontWeight:700, color:'#fff' }}>{fmt(totalSpent)}</span>
+          </div>
+        </>) : (<>
+          <div style={{ padding:'12px 16px', background:C.surface, borderBottom:`1px solid ${C.border}` }}>
+            <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>สัดส่วนรายรับ</div>
+            {incomeCats.map(cat => {
+              const amt=cat.items.reduce((s,i)=>s+i.amt,0);
+              const pct=incTotal>0?(amt/incTotal)*100:0;
+              return (
+                <div key={cat.id} style={{ marginBottom:10 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                    <span style={{ fontSize:12, color:C.text }}>{cat.icon} {cat.name}</span>
+                    <div>
+                      <span style={{ fontSize:12, fontWeight:700, color:cat.color }}>{fmt(amt)}</span>
+                      <span style={{ fontSize:10, color:C.textDim, marginLeft:4 }}>{Math.round(pct)}%</span>
+                    </div>
+                  </div>
+                  <Bar pct={pct} color={cat.color} bg={C.surfaceAlt} h={6}/>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+            padding:'10px 16px 8px', position:'sticky', top:0, background:C.bg,
+            borderBottom:`1px solid ${C.border}`, zIndex:1 }}>
+            <span style={{ fontSize:14*T.fontScale, fontWeight:600, color:C.text }}>แหล่งรายรับ</span>
+            <button onClick={()=>setIncSortMode(m=>(m+1)%INC_SORT_LABELS.length)}
+              style={{ fontSize:12, color:incSortMode>0?'#10b981':C.textDim, fontWeight:incSortMode>0?600:400,
+                background:'none', border:'none', cursor:'pointer' }}>
+              {INC_SORT_LABELS[incSortMode]}
+            </button>
+          </div>
+          {sortedIncCats.map(cat => {
+            const total=cat.items.reduce((s,i)=>s+i.amt,0), isOpen=!!incomeOpen[cat.id];
+            return (
+              <div key={cat.id}>
+                <div onClick={()=>setIncomeOpen(o=>({...o,[cat.id]:!o[cat.id]}))}
+                  style={{ padding:'11px 16px 9px', background:C.surface, borderBottom:`1px solid ${C.border}`, cursor:'pointer' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ width:38, height:38, borderRadius:11, flexShrink:0, background:cat.color+'20',
+                      display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{cat.icon}</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
+                        <span style={{ fontSize:14*T.fontScale, fontWeight:600, color:C.text }}>{cat.name}</span>
+                        <span style={{ fontSize:14*T.fontScale, fontWeight:700, color:cat.color }}>+{fmt(total)}</span>
+                      </div>
+                      <span style={{ fontSize:11, color:C.textDim }}>{cat.items.length} รายการ</span>
+                    </div>
+                    <span style={{ fontSize:10, color:C.textDim, marginLeft:6, display:'inline-block',
+                      transition:'transform .2s', transform:isOpen?'rotate(180deg)':'none' }}>▼</span>
+                  </div>
+                </div>
+                {isOpen && cat.items.map(item => (
+                  <div key={item.id} style={{ display:'flex', alignItems:'center', gap:10,
+                    padding:'9px 16px 9px 13px', background:C.bg,
+                    borderBottom:`1px solid ${C.border}`, borderLeft:`3px solid ${cat.color}` }}>
+                    <div style={{ width:34, height:34, borderRadius:9, flexShrink:0,
+                      background:cat.color+'15', border:`1.5px solid ${cat.color+'35'}`,
+                      display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{cat.icon}</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13*T.fontScale, fontWeight:500, color:C.text }}>{item.desc}</div>
+                      <div style={{ fontSize:11, color:C.textDim, marginTop:1 }}>{item.date}</div>
+                    </div>
+                    <span style={{ fontSize:13*T.fontScale, fontWeight:600, color:cat.color }}>+{fmt(item.amt)}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          <div style={{ margin:'12px 16px', background:'#10b981', borderRadius:12, padding:'13px 16px',
+            display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span style={{ fontSize:14*T.fontScale, fontWeight:500, color:'rgba(255,255,255,0.7)' }}>รายรับทั้งหมด</span>
+            <span style={{ fontSize:18*T.fontScale, fontWeight:700, color:'#fff' }}>+{fmt(totalIncome)}</span>
+          </div>
+        </>)}
+        <div style={{ height:16 }}/>
+      </div>
+    </div>
+  );
+};
+
+/* ── CALENDAR SCREEN ── */
+const CAL_MONTHS = [
+  { label:'มกราคม',     days:31, firstDay:3 },
+  { label:'กุมภาพันธ์', days:28, firstDay:6 },
+  { label:'มีนาคม',     days:31, firstDay:0 },
+  { label:'เมษายน',     days:30, firstDay:2 },
+  { label:'พฤษภาคม',   days:31, firstDay:4 },
+  { label:'มิถุนายน',   days:30, firstDay:0 },
+];
+
+const CalendarScreen = ({ T, C, cats, incomeCats, onDeleteExpense, onDeleteIncome }) => {
+  const [view, setView] = useState('expense');
+  const [sel, setSel]   = useState(null);
+  const [mo, setMo]     = useState(4); // default พฤษภาคม
+  const { label:moLabel, days:daysInMonth, firstDay } = CAL_MONTHS[mo];
+  const weeks=[]; let d=1-firstDay;
+  for(let w=0;w<6;w++){const wk=[];for(let x=0;x<7;x++,d++)wk.push(d>=1&&d<=daysInMonth?d:null);if(wk.some(x=>x))weeks.push(wk);}
+
+  const spendByDay = useMemo(() => {
+    const map={};
+    cats.forEach(cat=>cat.items.forEach(item=>{ const m=item.date.match(/May (\d+)/); if(m){const day=Number(m[1]);map[day]=(map[day]||0)+item.amt;} }));
+    return map;
+  }, [cats]);
+
+  const incomeByDay = useMemo(() => {
+    const map={};
+    incomeCats.forEach(cat=>cat.items.forEach(item=>{ const m=item.date.match(/May (\d+)/); if(m){const day=Number(m[1]);map[day]=(map[day]||0)+item.amt;} }));
+    return map;
+  }, [incomeCats]);
+
+  const dayMap   = view==='income' ? incomeByDay : spendByDay;
+  const maxVal   = Object.values(dayMap).length ? Math.max(...Object.values(dayMap)) : 1;
+  const dotColor = view==='income' ? '#10b981' : C.accent;
+
+  const selExpItems = sel ? cats.flatMap(cat=>cat.items.filter(i=>i.date===`May ${sel}`).map(i=>({...i,catColor:cat.color,catId:cat.id}))) : [];
+  const selIncItems = sel ? incomeCats.flatMap(cat=>cat.items.filter(i=>i.date===`May ${sel}`).map(i=>({...i,catColor:cat.color,catId:cat.id}))) : [];
+  const selItems    = view==='income' ? selIncItems : selExpItems;
+
+  return (
+    <div style={{ flex:1, overflowY:'auto', background:C.bg }}>
+      <div style={{ padding:'10px 16px 8px', background:C.surface, borderBottom:`1px solid ${C.border}` }}>
+        <div style={{ fontSize:16*T.fontScale, fontWeight:700, color:C.text }}>ประวัติ</div>
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
+          <button onClick={()=>{ setMo(m=>Math.max(0,m-1)); setSel(null); }}
+            style={{ background:'none', border:'none', cursor:'pointer', fontSize:20, color:C.textDim, padding:'0 4px', lineHeight:1 }}>‹</button>
+          <span style={{ fontSize:14, fontWeight:600, color:C.text, minWidth:90, textAlign:'center' }}>{moLabel} 2569</span>
+          <button onClick={()=>{ setMo(m=>Math.min(CAL_MONTHS.length-1,m+1)); setSel(null); }}
+            style={{ background:'none', border:'none', cursor:'pointer', fontSize:20, color:C.textDim, padding:'0 4px', lineHeight:1 }}>›</button>
+        </div>
+      </div>
+      <div style={{ display:'flex', background:C.surface, borderBottom:`1px solid ${C.border}` }}>
+        {[['expense','💸 รายจ่าย'],['income','💰 รายรับ']].map(([v,label]) => (
+          <button key={v} onClick={()=>{ setView(v); setSel(null); }}
+            style={{ flex:1, padding:'10px 0', border:'none', background:'none', cursor:'pointer',
+              borderBottom: view===v ? `2.5px solid ${v==='income'?'#10b981':C.accent}` : '2.5px solid transparent',
+              color: view===v ? (v==='income'?'#10b981':C.accent) : C.textDim,
+              fontWeight: view===v ? 600 : 400, fontSize:13, transition:'color .15s' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ margin:'12px 14px 0', background:C.surface, borderRadius:14, padding:'12px 10px', boxShadow:C.shadow }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', marginBottom:6 }}>
+          {['จ','อ','พ','พฤ','ศ','ส','อา'].map(l=><div key={l} style={{ textAlign:'center', fontSize:10, color:C.textDim, fontWeight:600 }}>{l}</div>)}
+        </div>
+        {weeks.map((wk,wi)=>(
+          <div key={wi} style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:3, marginBottom:3 }}>
+            {wk.map((day,di)=>{
+              const val=day?dayMap[day]||0:0, isSel=sel===day, isToday=day===27;
+              const intensity=val?Math.round((val/maxVal)*50+15):0;
+              const hex=intensity.toString(16).padStart(2,'0');
+              return (
+                <div key={di} onClick={()=>day&&setSel(isSel?null:day)}
+                  style={{ height:40, borderRadius:9, cursor:day?'pointer':'default',
+                    background:isSel?dotColor:val?`${dotColor}${hex}`:day?C.bg:'transparent',
+                    border:isToday&&!isSel?`2px solid ${dotColor}`:'2px solid transparent',
+                    display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2, transition:'background .15s' }}>
+                  {day&&<>
+                    <span style={{ fontSize:12, fontWeight:isToday||isSel?700:400, color:isSel?'#fff':C.text }}>{day}</span>
+                    {val>0&&!isSel&&<div style={{ width:4,height:4,borderRadius:'50%',background:dotColor }}/>}
+                  </>}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {sel&&selItems.length>0&&(
+        <div style={{ margin:'10px 14px 0', background:C.surface, borderRadius:12, padding:'12px', boxShadow:C.shadow }}>
+          <div style={{ fontSize:13*T.fontScale, fontWeight:600, color:C.text, marginBottom:8 }}>
+            {sel} พ.ค. — {view==='income'?'+':''}{fmt(dayMap[sel]||0)}
+          </div>
+          {selItems.map(item=>(
+            <div key={item.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'6px 0', borderTop:`1px solid ${C.border}` }}>
+              <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                <span style={{ width:7,height:7,borderRadius:'50%',background:item.catColor,display:'inline-block' }}/>
+                <span style={{ fontSize:13, color:C.text }}>{item.desc}</span>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:13, fontWeight:600, color:view==='income'?item.catColor:C.text }}>
+                  {view==='income'?'+':''}{fmt(item.amt)}
+                </span>
+                <button onClick={()=>{ view==='income'?onDeleteIncome({catId:item.catId,itemId:item.id}):onDeleteExpense({catId:item.catId,itemId:item.id}); }}
+                  style={{ background:'none', border:'none', cursor:'pointer', fontSize:15, color:'#e05a4f', lineHeight:1, padding:'2px 2px' }}>🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ padding:'14px 16px 6px' }}>
+        <span style={{ fontSize:11, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.06em' }}>เดือนก่อนหน้า</span>
+      </div>
+      {view==='expense' ? (
+        [...HISTORY].reverse().map((m,i)=>{
+          const over=m.spent>m.budget;
+          return (
+            <div key={i} style={{ margin:'0 14px 8px', background:C.surface, borderRadius:12, padding:'12px', boxShadow:C.shadow }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:6 }}>
+                <span style={{ fontSize:14*T.fontScale, fontWeight:600, color:C.text }}>{m.label} 2569</span>
+                <span style={{ fontSize:14*T.fontScale, fontWeight:700, color:over?'#e05a4f':C.text }}>{fmt(m.spent)}</span>
+              </div>
+              <Bar pct={m.spent/m.budget*100} color={over?'#e05a4f':C.accent} bg={C.surfaceAlt}/>
+              <div style={{ textAlign:'right', marginTop:3 }}><span style={{ fontSize:10, color:C.textDim }}>งบ {fmt(m.budget)}</span></div>
+            </div>
+          );
+        })
+      ) : (
+        [...INCOME_HISTORY].reverse().map((m,i)=>{
+          const maxInc=Math.max(...INCOME_HISTORY.map(x=>x.income));
+          return (
+            <div key={i} style={{ margin:'0 14px 8px', background:C.surface, borderRadius:12, padding:'12px', boxShadow:C.shadow }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:6 }}>
+                <span style={{ fontSize:14*T.fontScale, fontWeight:600, color:C.text }}>{m.label} 2569</span>
+                <span style={{ fontSize:14*T.fontScale, fontWeight:700, color:'#10b981' }}>+{fmt(m.income)}</span>
+              </div>
+              <Bar pct={m.income/maxInc*100} color="#10b981" bg={C.surfaceAlt}/>
+            </div>
+          );
+        })
+      )}
+      <div style={{ height:16 }}/>
+    </div>
+  );
+};
+
+/* ── CATEGORY DETAIL ── */
+const CategoryDetail = ({ cat, T, C, onBack, onDeleteItem }) => {
+  if (!cat) return null;
+  const pct=cat.spent/cat.budget*100, over=cat.spent>cat.budget;
+  return (
+    <div style={{ flex:1, overflowY:'auto', background:C.bg }}>
+      <div style={{ background:cat.color, padding:'10px 16px 18px' }}>
+        <button onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer',
+          display:'flex', alignItems:'center', gap:4, marginBottom:12 }}>
+          <span style={{ fontSize:22, color:'rgba(255,255,255,0.8)', lineHeight:1 }}>‹</span>
+          <span style={{ fontSize:13, fontWeight:500, color:'rgba(255,255,255,0.7)' }}>กลับ</span>
+        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+          <div style={{ width:52, height:52, borderRadius:15, background:'rgba(255,255,255,0.22)',
+            display:'flex', alignItems:'center', justifyContent:'center', fontSize:26 }}>{cat.icon}</div>
+          <div>
+            <div style={{ fontSize:12, color:'rgba(255,255,255,0.7)', fontWeight:500 }}>{cat.name}</div>
+            <div style={{ fontSize:30*T.fontScale, fontWeight:700, color:'#fff', lineHeight:1.1 }}>{fmt(cat.spent)}</div>
+          </div>
+        </div>
+        <div style={{ marginTop:12 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
+            <span style={{ fontSize:11, color:'rgba(255,255,255,0.65)' }}>งบ {fmt(cat.budget)}</span>
+            <span style={{ fontSize:11, fontWeight:600, color:over?'rgba(255,180,180,0.95)':'rgba(255,255,255,0.65)' }}>
+              {over?'⚠ เกินงบ':`เหลือ ${fmt(cat.budget-cat.spent)}`}
+            </span>
+          </div>
+          <Bar pct={pct} color="rgba(255,255,255,0.85)" h={6} bg="rgba(255,255,255,0.2)"/>
+        </div>
+      </div>
+      <div style={{ padding:'12px 0' }}>
+        <div style={{ padding:'0 16px 8px' }}>
+          <span style={{ fontSize:11, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.06em' }}>
+            ทั้งหมด {cat.count} รายการ
+          </span>
+        </div>
+        {cat.items.map(item=>(
+          <div key={item.id} style={{ display:'flex', alignItems:'center', gap:12,
+            padding:'11px 16px', background:C.surface, borderBottom:`1px solid ${C.border}` }}>
+            <div style={{ width:38, height:38, borderRadius:11, flexShrink:0,
+              background:item.receipt?cat.color+'18':C.surfaceAlt,
+              border:`1.5px solid ${item.receipt?cat.color+'40':C.border}`,
+              display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>
+              {item.receipt?'🧾':<span style={{ color:C.textDim, fontSize:14 }}>—</span>}
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14*T.fontScale, fontWeight:500, color:C.text }}>{item.desc}</div>
+              <div style={{ fontSize:11, color:C.textDim, marginTop:1 }}>{item.date}</div>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:14*T.fontScale, fontWeight:700, color:C.text }}>{fmt(item.amt)}</span>
+              <button onClick={()=>onDeleteItem(item.id)}
+                style={{ background:'none', border:'none', cursor:'pointer', fontSize:15, color:'#e05a4f', lineHeight:1, padding:'4px' }}>🗑</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/* ── NAV ── */
+const Nav = ({ screen, onNav, C }) => (
+  <div style={{ display:'flex', borderTop:`1px solid ${C.border}`, background:C.surface, flexShrink:0 }}>
+    {[
+      { id:'home',    label:'หน้าหลัก', icon:<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
+      { id:'history', label:'ประวัติ',  icon:<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> },
+    ].map(t => {
+      const active=screen===t.id;
+      return (
+        <button key={t.id} onClick={()=>onNav(t.id)}
+          style={{ flex:1, background:'none', border:'none', cursor:'pointer',
+            display:'flex', flexDirection:'column', alignItems:'center', gap:3,
+            padding:'9px 0 14px', color:active?C.accent:C.textDim, transition:'color .2s' }}>
+          {t.icon}
+          <span style={{ fontSize:10, fontWeight:active?600:400 }}>{t.label}</span>
+        </button>
+      );
+    })}
+  </div>
+);
+
+/* ── FAB ── */
+const FAB = ({ C, onClick }) => (
+  <button onClick={onClick}
+    style={{ position:'absolute', bottom:74, right:16, width:50, height:50,
+      borderRadius:16, background:C.accent, border:'none', cursor:'pointer',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      boxShadow:`0 4px 16px ${C.accent}55`, zIndex:10 }}
+    onMouseDown={e=>e.currentTarget.style.transform='scale(.94)'}
+    onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}>
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  </button>
+);
+
+/* ── APP ── */
+const App = () => {
+  const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const C = useMemo(() => mk(tweaks), [tweaks.accent, tweaks.heroColor, tweaks.bgColor]);
+  const T = tweaks;
+
+  const [cats, setCats] = useState(() => {
+    try { const s = localStorage.getItem('exp_cats'); return s ? JSON.parse(s) : INIT_CATS; } catch { return INIT_CATS; }
+  });
+  const [incomeCats, setIncomeCats] = useState(() => {
+    try { const s = localStorage.getItem('exp_income'); return s ? JSON.parse(s) : INIT_INCOME_CATS; } catch { return INIT_INCOME_CATS; }
+  });
+  useEffect(() => { try { localStorage.setItem('exp_cats', JSON.stringify(cats)); } catch {} }, [cats]);
+  useEffect(() => { try { localStorage.setItem('exp_income', JSON.stringify(incomeCats)); } catch {} }, [incomeCats]);
+  const totalSpent   = useMemo(() => cats.reduce((s,c)=>s+c.spent,0),  [cats]);
+  const totalBudget  = useMemo(() => cats.reduce((s,c)=>s+c.budget,0), [cats]);
+  const totalIncome  = useMemo(() => incomeCats.reduce((s,c)=>s+c.items.reduce((ss,i)=>ss+i.amt,0),0), [incomeCats]);
+
+  const [screen, setScreen] = useState('home');
+  const [catId, setCatId]   = useState(null);
+  const [showSheet, setShowSheet] = useState(false);
+
+  const goHome = () => { setScreen('home'); setCatId(null); };
+
+  const addItem = ({ catId:cId, item }) => {
+    setCats(cs => cs.map(c => c.id===cId ? { ...c, items:[item,...c.items], spent:c.spent+item.amt, count:c.count+1 } : c));
+  };
+  const addIncome = ({ catId:cId, item }) => {
+    setIncomeCats(cs => cs.map(c => c.id===cId ? { ...c, items:[item,...c.items] } : c));
+  };
+  const deleteExpenseItem = ({ catId:cId, itemId }) => {
+    setCats(cs => cs.map(c => {
+      if (c.id !== cId) return c;
+      const gone = c.items.find(i => i.id === itemId);
+      return { ...c, items: c.items.filter(i => i.id !== itemId), spent: c.spent - (gone?.amt||0), count: c.count - 1 };
+    }));
+  };
+  const deleteIncomeItem = ({ catId:cId, itemId }) => {
+    setIncomeCats(cs => cs.map(c => c.id===cId ? { ...c, items:c.items.filter(i=>i.id!==itemId) } : c));
+  };
+
+  const activeCat = catId ? cats.find(c=>c.id===catId) : null;
+  const heroColor = activeCat ? activeCat.color : screen==='home' ? C.hero : C.surface;
+  const statusFg  = activeCat||screen==='home' ? 'rgba(255,255,255,0.75)' : C.text;
+  const statusSub = activeCat||screen==='home' ? 'rgba(255,255,255,0.5)' : C.textDim;
+
+  return (
+    <div style={{ position:'relative' }}>
+      <div style={{ width:360, height:720, background:C.surface, borderRadius:40, overflow:'hidden',
+        boxShadow:`0 24px 60px rgba(0,0,0,0.28), 0 0 0 8px ${C.hero}`,
+        display:'flex', flexDirection:'column', position:'relative' }}>
+
+        {/* Status bar removed */}
+
+        {activeCat ? (
+          <CategoryDetail cat={activeCat} T={T} C={C} onBack={goHome} onDeleteItem={itemId=>deleteExpenseItem({catId:activeCat.id,itemId})}/>
+        ) : screen==='history' ? (
+          <CalendarScreen T={T} C={C} cats={cats} incomeCats={incomeCats} onDeleteExpense={deleteExpenseItem} onDeleteIncome={deleteIncomeItem}/>
+        ) : (
+          <Dashboard T={T} C={C} cats={cats} incomeCats={incomeCats} totalSpent={totalSpent} totalBudget={totalBudget}
+            totalIncome={totalIncome} onCat={id=>{ setCatId(id); setScreen('cat'); }}/>
+        )}
+
+        {!activeCat && <Nav screen={screen} onNav={s=>{ setScreen(s); setCatId(null); }} C={C}/>}
+        {!activeCat && <FAB C={C} onClick={()=>setShowSheet(true)}/>}
+      </div>
+
+      {/* Sheet overlay — outside overflow:hidden so slide animation works */}
+      {showSheet && (
+        <div style={{ position:'absolute', top:0, left:0, width:360, height:720,
+          borderRadius:40, overflow:'hidden', zIndex:50, pointerEvents:'auto' }}>
+          <AddExpenseSheet C={C} T={T} cats={cats} incomeCats={incomeCats}
+            onAdd={addItem} onAddIncome={addIncome} onClose={()=>setShowSheet(false)}/>
+        </div>
+      )}
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="Color">
+          <TweakColor id="accent"    label="Accent"          value={tweaks.accent}    options={['#6c63ff','#f4875a','#4dcaa3','#e05a8a','#3a9bd5']} onChange={v=>setTweak('accent',v)}/>
+          <TweakColor id="heroColor" label="Hero background" value={tweaks.heroColor} options={['#1c1a16','#0f1724','#1a1a2e','#1a1609','#111827']} onChange={v=>setTweak('heroColor',v)}/>
+          <TweakColor id="bgColor"   label="Page background" value={tweaks.bgColor}   options={['#faf8f4','#f5f5f5','#fef9f0','#f0f4ff','#fff']}    onChange={v=>setTweak('bgColor',v)}/>
+        </TweakSection>
+        <TweakSection label="Type scale">
+          <TweakSlider id="fontScale" label="Font scale" value={tweaks.fontScale} min={0.85} max={1.2} step={0.05} onChange={v=>setTweak('fontScale',v)}/>
+        </TweakSection>
+      </TweaksPanel>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
