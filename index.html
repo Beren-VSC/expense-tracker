@@ -97,11 +97,17 @@ const __TWEAKS_STYLE = `
 `;
 
 function useTweaks(defaults) {
-  const [values, setValues] = useState(defaults);
+  const [values, setValues] = useState(() => {
+    try { const s = localStorage.getItem('exp_tweaks'); return s ? {...defaults, ...JSON.parse(s)} : defaults; } catch { return defaults; }
+  });
   const setTweak = useCallback((keyOrEdits, val) => {
     const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
       ? keyOrEdits : { [keyOrEdits]: val };
-    setValues(prev => ({ ...prev, ...edits }));
+    setValues(prev => {
+      const next = { ...prev, ...edits };
+      try { localStorage.setItem('exp_tweaks', JSON.stringify(next)); } catch {}
+      return next;
+    });
   }, []);
   return [values, setTweak];
 }
@@ -371,9 +377,31 @@ const Donut = ({ cats, size=80 }) => {
 };
 
 /* ── ADD EXPENSE SHEET ── */
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const _now = new Date();
+const todayStr = `${MONTHS_FULL[_now.getMonth()]} ${_now.getDate()}`;
+
+const parseOcrText = (text) => {
+  const amtPatterns = [
+    /(?:total|amount|รวม|ยอดรวม|รวมทั้งสิ้น|net)[^\d]*([0-9,]+(?:\.[0-9]{1,2})?)/i,
+    /฿\s*([0-9,]+(?:\.[0-9]{1,2})?)/,
+    /([0-9,]{3,}(?:\.[0-9]{2})?)\s*(?:thb|baht|บาท)/i,
+  ];
+  let amt = '';
+  for (const p of amtPatterns) { const m = text.match(p); if (m) { amt = m[1].replace(/,/g,''); break; } }
+  if (!amt) {
+    const nums = [...text.matchAll(/([0-9,]+\.[0-9]{2})/g)].map(m=>parseFloat(m[1].replace(/,/g,'')));
+    if (nums.length) amt = String(Math.max(...nums));
+  }
+  let dateStr = todayStr;
+  const dm = text.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  if (dm) { const mo = parseInt(dm[2])-1; if (mo>=0&&mo<12) dateStr = `${MONTHS_FULL[mo]} ${dm[1]}`; }
+  return { amt, dateStr };
+};
+
 const AddExpenseSheet = ({ C, T, cats, incomeCats, onAdd, onAddIncome, onClose }) => {
   const [type, setType]   = useState('expense');
-  const [form, setForm]   = useState({ catId:'food', desc:'', amt:'', date:'May 27' });
+  const [form, setForm]   = useState({ catId:'food', desc:'', amt:'', date:todayStr });
   const [img, setImg]     = useState(null);
   const [status, setStatus] = useState(null);
   const [entered, setEntered] = useState(false);
@@ -382,7 +410,7 @@ const AddExpenseSheet = ({ C, T, cats, incomeCats, onAdd, onAddIncome, onClose }
   const activeCats = type === 'income' ? incomeCats : cats;
   const switchType = t => {
     setType(t);
-    setForm({ catId: t==='income' ? 'salary' : 'food', desc:'', amt:'', date:'May 27' });
+    setForm({ catId: t==='income' ? 'salary' : 'food', desc:'', amt:'', date:todayStr });
     setImg(null); setStatus(null);
   };
 
@@ -401,24 +429,44 @@ const AddExpenseSheet = ({ C, T, cats, incomeCats, onAdd, onAddIncome, onClose }
       setStatus('scanning');
       try {
         if (window.claude) {
+          const isIncome = type === 'income';
+          const prompt = isIncome
+            ? `Extract from this receipt/slip: source name (concise, max 20 chars), total amount received as plain number in Thai Baht, date as "Month DD" (English full month name). Pick income category from: salary, bonus, freelance, invest, other. Reply ONLY JSON: {"desc":"Salary","amt":25000,"date":"May 1","cat":"salary"}`
+            : `Extract from this receipt: store name (concise, max 20 chars), total amount paid as plain number in Thai Baht, date as "Month DD" (English full month name). Pick category: food, drinks, transport, fuel, housing, electricity, water, health, entertain, credit, other. Reply ONLY JSON: {"desc":"MK Suki","amt":680,"date":"May 24","cat":"food"}`;
           const result = await window.claude.complete({
             messages:[{ role:'user', content:[
               { type:'image', source:{ type:'base64', media_type:file.type||'image/jpeg', data:dataUrl.split(',')[1] }},
-              { type:'text', text:'Extract from this receipt: store/merchant name (concise, max 20 chars), total amount paid as a plain number in Thai Baht (no currency symbol), and the date formatted as "May DD". Also pick the best matching category from exactly: food, drinks, transport, fuel, housing, electricity, water, health, entertain, credit, other. Reply ONLY with valid JSON, no markdown fences: {"desc":"MK Suki","amt":680,"date":"May 24","cat":"food"}' }
+              { type:'text', text: prompt }
             ]}]
           });
           const match = result.match(/\{[\s\S]*?\}/);
           if (match) {
             const p = JSON.parse(match[0]);
-            const catId = cats.find(c=>c.id===p.cat) ? p.cat : 'food';
-            if (p.desc && Number(p.amt) > 0) {
-              onAdd({ catId, item:{ id:Date.now(), desc:p.desc, amt:Math.round(Number(p.amt)), date:p.date||'May 27', receipt:true }});
-              setStatus('saved');
-              setTimeout(onClose, 1100);
-              return;
+            const aCats = isIncome ? incomeCats : cats;
+            const catId = aCats.find(c=>c.id===p.cat) ? p.cat : (isIncome?'salary':'food');
+            const item = { id:Date.now(), desc:p.desc||'', amt:Math.round(Number(p.amt)), date:p.date||todayStr, receipt:true };
+            if (Number(p.amt) > 0) {
+              isIncome ? onAddIncome({catId,item}) : onAdd({catId,item});
+              setStatus('saved'); setTimeout(onClose, 1100); return;
             }
-            setForm({ catId, desc:p.desc||'', amt:p.amt?String(Math.round(p.amt)):'', date:p.date||'May 27' });
+            setForm({ catId, desc:p.desc||'', amt:p.amt?String(Math.round(p.amt)):'', date:p.date||todayStr });
           }
+        } else {
+          // Tesseract.js OCR fallback
+          if (!window.Tesseract) {
+            await new Promise((res,rej)=>{ const s=document.createElement('script');
+              s.src='https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
+              s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+          }
+          const worker = await Tesseract.createWorker('eng', 1, {
+            workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/worker.min.js',
+            langPath:'https://cdn.jsdelivr.net/npm/tesseract.js-data@4',
+            corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@4/tesseract-core.wasm.js',
+          });
+          const { data:{ text } } = await worker.recognize(dataUrl);
+          await worker.terminate();
+          const { amt, dateStr } = parseOcrText(text);
+          if (amt) setForm(f => ({...f, amt, date:dateStr}));
         }
       } catch(err) { console.warn('Scan err:', err); }
       setStatus('manual');
@@ -427,7 +475,7 @@ const AddExpenseSheet = ({ C, T, cats, incomeCats, onAdd, onAddIncome, onClose }
   };
 
   const handleSave = () => {
-    if (!form.desc.trim() || !Number(form.amt)) return;
+    if (!Number(form.amt)) return;
     const item = { id:Date.now(), desc:form.desc, amt:Number(form.amt), date:form.date, receipt:!!img };
     if (type === 'income') onAddIncome({ catId:form.catId, item });
     else onAdd({ catId:form.catId, item });
@@ -435,7 +483,7 @@ const AddExpenseSheet = ({ C, T, cats, incomeCats, onAdd, onAddIncome, onClose }
     setTimeout(onClose, 900);
   };
 
-  const valid = form.desc.trim() && Number(form.amt) > 0;
+  const valid = Number(form.amt) > 0;
 
   return (
     <>
@@ -484,8 +532,8 @@ const AddExpenseSheet = ({ C, T, cats, incomeCats, onAdd, onAddIncome, onClose }
           </div>
         ) : (
           <div style={{ overflowY:'auto', padding:'0 16px 28px', display:'flex', flexDirection:'column', gap:14 }}>
-            {type === 'expense' && <div>
-              <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>ใบเสร็จ · AI สแกนอัตโนมัติ</div>
+            <div>
+              <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>ใบเสร็จ · สแกนอัตโนมัติ</div>
               <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display:'none' }}/>
               {!img ? (
                 <button onClick={() => fileRef.current.click()}
@@ -519,7 +567,7 @@ const AddExpenseSheet = ({ C, T, cats, incomeCats, onAdd, onAddIncome, onClose }
                   )}
                 </div>
               )}
-            </div>}
+            </div>
 
             {(status === 'manual' || !img) && <>
               <div>
@@ -540,7 +588,7 @@ const AddExpenseSheet = ({ C, T, cats, incomeCats, onAdd, onAddIncome, onClose }
               <div>
                 <div style={{ fontSize:10, fontWeight:600, color:C.textMid, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:6 }}>รายละเอียด</div>
                 <input value={form.desc} onChange={e => set('desc', e.target.value)}
-                  placeholder="เช่น MK Suki, Grab Food…"
+                  placeholder="ชื่อร้าน หรือรายละเอียด (ไม่บังคับ)"
                   style={{ width:'100%', padding:'10px 12px', borderRadius:10, fontSize:14,
                     border:`1.5px solid ${C.border}`, background:C.bg, color:C.text, outline:'none' }}
                   onFocus={e => e.target.style.borderColor=C.accent}
@@ -840,31 +888,39 @@ const Dashboard = ({ T, C, cats, incomeCats, totalSpent, totalBudget, totalIncom
 
 /* ── CALENDAR SCREEN ── */
 const CAL_MONTHS = [
-  { label:'มกราคม',     days:31, firstDay:3 },
-  { label:'กุมภาพันธ์', days:28, firstDay:6 },
-  { label:'มีนาคม',     days:31, firstDay:0 },
-  { label:'เมษายน',     days:30, firstDay:2 },
-  { label:'พฤษภาคม',   days:31, firstDay:4 },
-  { label:'มิถุนายน',   days:30, firstDay:0 },
+  { label:'มกราคม',     en:'January',   days:31, firstDay:4 },
+  { label:'กุมภาพันธ์', en:'February',  days:28, firstDay:0 },
+  { label:'มีนาคม',     en:'March',     days:31, firstDay:0 },
+  { label:'เมษายน',     en:'April',     days:30, firstDay:3 },
+  { label:'พฤษภาคม',   en:'May',       days:31, firstDay:5 },
+  { label:'มิถุนายน',   en:'June',      days:30, firstDay:1 },
+  { label:'กรกฎาคม',   en:'July',      days:31, firstDay:3 },
+  { label:'สิงหาคม',   en:'August',    days:31, firstDay:6 },
+  { label:'กันยายน',   en:'September', days:30, firstDay:2 },
+  { label:'ตุลาคม',    en:'October',   days:31, firstDay:4 },
+  { label:'พฤศจิกายน', en:'November',  days:30, firstDay:0 },
+  { label:'ธันวาคม',   en:'December',  days:31, firstDay:2 },
 ];
 
 const CalendarScreen = ({ T, C, cats, incomeCats, onDeleteExpense, onDeleteIncome }) => {
   const [view, setView] = useState('expense');
   const [sel, setSel]   = useState(null);
-  const [mo, setMo]     = useState(4); // default พฤษภาคม
-  const { label:moLabel, days:daysInMonth, firstDay } = CAL_MONTHS[mo];
+  const [mo, setMo]     = useState(new Date().getMonth());
+  const { label:moLabel, en:moEn, days:daysInMonth, firstDay } = CAL_MONTHS[mo];
   const weeks=[]; let d=1-firstDay;
   for(let w=0;w<6;w++){const wk=[];for(let x=0;x<7;x++,d++)wk.push(d>=1&&d<=daysInMonth?d:null);if(wk.some(x=>x))weeks.push(wk);}
 
   const spendByDay = useMemo(() => {
     const map={};
-    cats.forEach(cat=>cat.items.forEach(item=>{ const m=item.date.match(/May (\d+)/); if(m){const day=Number(m[1]);map[day]=(map[day]||0)+item.amt;} }));
+    const re = new RegExp(moEn+' (\\d+)');
+    cats.forEach(cat=>cat.items.forEach(item=>{ const m=item.date.match(re); if(m){const day=Number(m[1]);map[day]=(map[day]||0)+item.amt;} }));
     return map;
-  }, [cats]);
+  }, [cats, mo]);
 
   const incomeByDay = useMemo(() => {
     const map={};
-    incomeCats.forEach(cat=>cat.items.forEach(item=>{ const m=item.date.match(/May (\d+)/); if(m){const day=Number(m[1]);map[day]=(map[day]||0)+item.amt;} }));
+    const re = new RegExp(moEn+' (\\d+)');
+    incomeCats.forEach(cat=>cat.items.forEach(item=>{ const m=item.date.match(re); if(m){const day=Number(m[1]);map[day]=(map[day]||0)+item.amt;} }));
     return map;
   }, [incomeCats]);
 
@@ -872,8 +928,8 @@ const CalendarScreen = ({ T, C, cats, incomeCats, onDeleteExpense, onDeleteIncom
   const maxVal   = Object.values(dayMap).length ? Math.max(...Object.values(dayMap)) : 1;
   const dotColor = view==='income' ? '#10b981' : C.accent;
 
-  const selExpItems = sel ? cats.flatMap(cat=>cat.items.filter(i=>i.date===`May ${sel}`).map(i=>({...i,catColor:cat.color,catId:cat.id}))) : [];
-  const selIncItems = sel ? incomeCats.flatMap(cat=>cat.items.filter(i=>i.date===`May ${sel}`).map(i=>({...i,catColor:cat.color,catId:cat.id}))) : [];
+  const selExpItems = sel ? cats.flatMap(cat=>cat.items.filter(i=>i.date===`${moEn} ${sel}`).map(i=>({...i,catColor:cat.color,catId:cat.id}))) : [];
+  const selIncItems = sel ? incomeCats.flatMap(cat=>cat.items.filter(i=>i.date===`${moEn} ${sel}`).map(i=>({...i,catColor:cat.color,catId:cat.id}))) : [];
   const selItems    = view==='income' ? selIncItems : selExpItems;
 
   return (
@@ -928,7 +984,7 @@ const CalendarScreen = ({ T, C, cats, incomeCats, onDeleteExpense, onDeleteIncom
       {sel&&selItems.length>0&&(
         <div style={{ margin:'10px 14px 0', background:C.surface, borderRadius:12, padding:'12px', boxShadow:C.shadow }}>
           <div style={{ fontSize:13*T.fontScale, fontWeight:600, color:C.text, marginBottom:8 }}>
-            {sel} พ.ค. — {view==='income'?'+':''}{fmt(dayMap[sel]||0)}
+            {sel} {moLabel} — {view==='income'?'+':''}{fmt(dayMap[sel]||0)}
           </div>
           {selItems.map(item=>(
             <div key={item.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'6px 0', borderTop:`1px solid ${C.border}` }}>
