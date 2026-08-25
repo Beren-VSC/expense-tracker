@@ -41,7 +41,8 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
 
   const topExp = [...cats].sort((a, b) => b.spent - a.spent).slice(0, 5);
   const maxExp = Math.max(...topExp.map(c => c.spent), 1);
-  const incTotal = incomeCats.reduce((s, c) => s + c.items.reduce((ss, i) => ss + i.amt, 0), 0);
+  // ยอดรวม "คงเหลือ" ของทุกบัญชี (ไม่ใช่ยอดรับดิบ) — ให้สัดส่วนรายรับด้านล่างตรงกับตัวเลขที่โชว์จริงในแต่ละบัญชี
+  const incTotal = incomeCats.reduce((s, c) => s + computeAccountBalance(c, cats, transfers), 0);
   const maxW = Math.max(...WEEKLY_EXPENSE);
   const maxIW = Math.max(...WEEKLY_INCOME);
 
@@ -64,8 +65,10 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
   const maxWeekly = view === 'income' ? maxIW : maxW;
   const weeklyColor = view === 'income' ? COLORS.income : COLORS.accent;
 
+  // โดนัทฝั่งรายรับ = สัดส่วนยอดคงเหลือปัจจุบันของแต่ละบัญชี (ไม่ใช่ยอดรับดิบ) ให้ตรงกับตัวเลขที่โชว์ในหน้านี้
+  // (ยอดคงเหลือติดลบไม่มีความหมายเป็น "ชิ้นส่วนของวงกลม" เลยตัดไว้ที่ 0)
   const donutCats = view === 'income'
-    ? incomeCats.map(c => ({ spent: c.items.reduce((s, i) => s + i.amt, 0), color: c.color, _isIncome: true }))
+    ? incomeCats.map(c => ({ spent: Math.max(0, computeAccountBalance(c, cats, transfers)), color: c.color, _isIncome: true }))
     : cats;
 
   const handleClearAll = () => {
@@ -276,20 +279,23 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
           <>
             {/* Income breakdown */}
             <View style={[s.card, { margin: 0, borderRadius: 0, borderBottomWidth: 1, borderColor: COLORS.border }]}>
-              <Text style={s.sectionLabel}>สัดส่วนรายรับ</Text>
+              <Text style={s.sectionLabel}>สัดส่วนคงเหลือ</Text>
               {incomeCats.map(cat => {
-                const amt = cat.items.reduce((s, i) => s + i.amt, 0);
-                const pct = incTotal > 0 ? (amt / incTotal) * 100 : 0;
+                // ยอดคงเหลือจริงของบัญชีนี้ — ให้ตรงกับตัวเลขที่โชว์ในลิสต์ "แหล่งรายรับ" ด้านล่าง
+                const balance = computeAccountBalance(cat, cats, transfers);
+                const pct = incTotal > 0 ? (balance / incTotal) * 100 : 0;
                 return (
                   <View key={cat.id} style={{ marginBottom: 10 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
                       <Text style={{ fontSize: 12, color: COLORS.text }}>{cat.icon} {cat.name}</Text>
                       <View style={{ flexDirection: 'row', gap: 4 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: cat.color }}>{fmt(amt)}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: balance < 0 ? COLORS.danger : cat.color }}>
+                          {balance < 0 ? '-' : ''}{fmt(Math.abs(balance))}
+                        </Text>
                         <Text style={{ fontSize: 10, color: COLORS.textDim }}>{Math.round(pct)}%</Text>
                       </View>
                     </View>
-                    <Bar pct={pct} color={cat.color} bg={COLORS.surfaceAlt} h={6} />
+                    <Bar pct={Math.max(0, pct)} color={cat.color} bg={COLORS.surfaceAlt} h={6} />
                   </View>
                 );
               })}
