@@ -167,9 +167,16 @@ export default function App() {
         ]);
         const enabled = enabledRaw !== '0'; // ค่าเริ่มต้น = เปิด (ยังไม่เคยตั้งค่าเลยแปลว่ายังไม่เคยปิด)
         setPinHash(hash);
-        setBiometricCredentialId(cred);
         setLockEnabled(enabled);
         setLockMode(!hash ? 'setup' : (enabled ? 'locked' : 'unlocked'));
+
+        // เจอ credential ที่ค้างอยู่ในเบราว์เซอร์ที่ตอนนี้ถือว่าใช้ Face ID/Touch ID ไม่นิ่ง (เช่น Chrome บน iOS)
+        // ล้างทิ้งเลย กันไว้ไม่ให้มีโค้ดจุดไหนดันไปอ่าน/ใช้ id ค้างนี้อีกในอนาคต (ตอนนี้ก็ไม่ได้ใช้แล้วเพราะเช็ค isWebAuthnSupported() คู่กันเสมอ)
+        if (cred && !isWebAuthnSupported()) {
+          AsyncStorage.removeItem(BIOMETRIC_CRED_KEY).catch(() => {});
+        } else {
+          setBiometricCredentialId(cred);
+        }
       } catch (e) {
         // อ่านการตั้งค่าล็อกไม่ได้ — ปล่อยผ่านเข้าแอปเลยดีกว่าล็อกผู้ใช้ออกจากข้อมูลตัวเอง
         console.warn('โหลดการตั้งค่าล็อกแอปไม่สำเร็จ', e);
@@ -487,7 +494,9 @@ export default function App() {
             error={lockError}
             onSetupComplete={handleSetupComplete}
             onAttemptUnlock={handleAttemptUnlock}
-            biometric={biometricCredentialId ? { label: '👤 ปลดล็อกด้วย Face ID / Touch ID', onPress: handleBiometricUnlock } : null}
+            // เช็ค isWebAuthnSupported() ซ้ำตรงนี้ (ไม่ใช่แค่มี credential id เก่าอยู่) — กันเบราว์เซอร์ที่ไม่นิ่ง
+            // (เช่น Chrome บน iOS) เสนอปุ่มนี้ทั้งที่เคยลงทะเบียนไว้ในเบราว์เซอร์อื่น/ก่อนจะปิดฟีเจอร์นี้ไว้
+            biometric={(biometricCredentialId && isWebAuthnSupported()) ? { label: '👤 ปลดล็อกด้วย Face ID / Touch ID', onPress: handleBiometricUnlock } : null}
           />
         </SafeAreaProvider>
       </GestureHandlerRootView>

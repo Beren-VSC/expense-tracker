@@ -12,10 +12,22 @@ export function hashPin(pin: string): string {
   return String(hash >>> 0);
 }
 
+// เบราว์เซอร์อื่นบน iOS ที่ไม่ใช่ Safari (Chrome, Firefox, Edge ฯลฯ) ใช้เอนจิน WKWebView เดียวกับ Safari
+// แต่การเชื่อม platform authenticator (Face ID/Touch ID ผ่าน iCloud Keychain) เข้ากับเบราว์เซอร์เหล่านี้ยังไม่นิ่ง
+// พบว่า Chrome บน iOS มักเด้งหน้า "ลงชื่อเข้า" ให้เลือกสแกน QR/กุญแจความปลอดภัย/บัญชีอื่นแทนที่จะขอ Face ID ตรงๆ
+// (หา credential ที่ลงทะเบียนไว้ไม่เจอ) ผู้ใช้ติดค้างอยู่หน้านั้น กดอะไรก็ไม่ผ่าน — เลยปิดฟีเจอร์นี้ไว้เฉพาะ Safari บน iOS
+function isUnreliableIosBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  if (!/iPad|iPhone|iPod/.test(ua)) return false;
+  // เบราว์เซอร์ที่ไม่ใช่ Safari บน iOS จะมี token พวกนี้ต่อท้ายใน user agent เสมอ (Safari เองไม่มี)
+  return /CriOS|FxiOS|EdgiOS|OPiOS|mercury|DuckDuckGo/i.test(ua);
+}
+
 // Face ID/Touch ID จริงๆ ทำได้แค่บนแอปเนทีฟ (expo-local-authentication) — แอปนี้ deploy เป็นเว็บ (PWA)
 // เลยใช้ WebAuthn platform authenticator ของเบราว์เซอร์แทน (รองรับเฉพาะเว็บ + ต้องเป็น HTTPS)
 export function isWebAuthnSupported(): boolean {
-  return Platform.OS === 'web' && typeof window !== 'undefined' && !!window.PublicKeyCredential;
+  return Platform.OS === 'web' && typeof window !== 'undefined' && !!window.PublicKeyCredential && !isUnreliableIosBrowser();
 }
 
 function randomBytes(length: number): Uint8Array<ArrayBuffer> {
