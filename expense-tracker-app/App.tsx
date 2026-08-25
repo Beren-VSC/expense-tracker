@@ -170,8 +170,8 @@ export default function App() {
         setLockEnabled(enabled);
         setLockMode(!hash ? 'setup' : (enabled ? 'locked' : 'unlocked'));
 
-        // เจอ credential ที่ค้างอยู่ในเบราว์เซอร์ที่ตอนนี้ถือว่าใช้ Face ID/Touch ID ไม่นิ่ง (เช่น Chrome บน iOS)
-        // ล้างทิ้งเลย กันไว้ไม่ให้มีโค้ดจุดไหนดันไปอ่าน/ใช้ id ค้างนี้อีกในอนาคต (ตอนนี้ก็ไม่ได้ใช้แล้วเพราะเช็ค isWebAuthnSupported() คู่กันเสมอ)
+        // ฟีเจอร์ Face ID/Touch ID ปิดไว้ (isWebAuthnSupported() คืน false เสมอตอนนี้ — ดูเหตุผลใน src/security.ts)
+        // เจอ credential เก่าที่เคยลงทะเบียนไว้ก่อนปิดฟีเจอร์ ล้างทิ้งไปเลย กันมันค้างเฉยๆ โดยไม่มีที่ไหนใช้แล้ว
         if (cred && !isWebAuthnSupported()) {
           AsyncStorage.removeItem(BIOMETRIC_CRED_KEY).catch(() => {});
         } else {
