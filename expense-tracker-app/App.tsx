@@ -20,7 +20,7 @@ import TransferSheet, { TransferPayload } from './src/components/TransferSheet';
 import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, ExpenseItem, IncomeCategory, NoteItem, TransferItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor, computeAccountBalance, generateId } from './src/data';
 import { COLORS } from './src/theme';
 import {
-  hashPin, isBiometricAvailable, authenticateWithBiometrics,
+  hashPin, isBiometricAvailable, enableBiometricUnlock, authenticateWithBiometrics,
   PIN_HASH_KEY, BIOMETRIC_ENABLED_KEY, LOCK_ENABLED_KEY,
 } from './src/security';
 
@@ -402,16 +402,24 @@ export default function App() {
     }
   };
 
-  // เปิดใช้ Face ID/Touch ID — ทดสอบยืนยันตัวตนให้ผ่านก่อนสักครั้งค่อยเปิดฟีเจอร์จริง (ไม่มีขั้น "ลงทะเบียน" แยก
-  // แบบ WebAuthn เพราะ OS เป็นคนเก็บข้อมูลไบโอเมตริกเองอยู่แล้ว) ใช้ Alert.alert แทน window.confirm/alert
-  // เพราะรันบนแอปเนทีฟ ไม่ใช่เว็บ (react-native-web ไม่รองรับ Alert.alert จริง แต่ที่นี่ไม่มีเว็บมาเกี่ยวข้องแล้ว)
+  // แจ้งเตือนแบบง่าย — react-native-web ไม่รองรับ Alert.alert จริง (เป็น no-op) ต้องใช้ window.alert บนเว็บแทน
+  const notify = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') window.alert(`${title}\n\n${message}`);
+      return;
+    }
+    Alert.alert(title, message);
+  };
+
+  // เปิดใช้ Face ID/Touch ID — บนเว็บต้องลงทะเบียนพาสคีย์ก่อน บนแอปเนทีฟแค่ทดสอบยืนยันตัวตนให้ผ่านสักครั้งพอ
+  // (ดูรายละเอียดใน enableBiometricUnlock ที่ src/security.ts)
   const enableBiometric = (onDone?: () => void) => {
-    authenticateWithBiometrics().then(ok => {
+    enableBiometricUnlock().then(ok => {
       if (ok) {
         AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, '1').catch(() => {});
         setBiometricEnabled(true);
       } else {
-        Alert.alert('เปิดใช้ Face ID / Touch ID ไม่สำเร็จ', 'ลองใหม่ได้ภายหลังในเมนูตั้งค่าการล็อก');
+        notify('เปิดใช้ Face ID / Touch ID ไม่สำเร็จ', 'ลองใหม่ได้ภายหลังในเมนูตั้งค่าการล็อก');
       }
       onDone?.();
     });
@@ -427,14 +435,16 @@ export default function App() {
     setLockMode('unlocked');
 
     if (biometricAvailable) {
-      Alert.alert(
-        'ตั้งรหัสผ่านเรียบร้อย ✅',
-        'ต้องการเปิดใช้ Face ID / Touch ID เพื่อปลดล็อกแอปเร็วขึ้นด้วยไหม?',
-        [
+      const message = 'ตั้งรหัสผ่านเรียบร้อย ✅\n\nต้องการเปิดใช้ Face ID / Touch ID เพื่อปลดล็อกแอปเร็วขึ้นด้วยไหม?';
+      if (Platform.OS === 'web') {
+        // react-native-web ไม่รองรับ Alert.alert จริง (เป็น no-op) — ต้องใช้ window.confirm บนเว็บแทน
+        if (typeof window !== 'undefined' && window.confirm(message)) enableBiometric();
+      } else {
+        Alert.alert('ตั้งรหัสผ่านเรียบร้อย ✅', 'ต้องการเปิดใช้ Face ID / Touch ID เพื่อปลดล็อกแอปเร็วขึ้นด้วยไหม?', [
           { text: 'ไม่ใช่ตอนนี้', style: 'cancel' },
           { text: 'เปิดใช้', onPress: () => enableBiometric() },
-        ],
-      );
+        ]);
+      }
     }
   };
 
