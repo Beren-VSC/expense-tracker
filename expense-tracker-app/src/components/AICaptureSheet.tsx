@@ -5,7 +5,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { ExpenseCategory, IncomeCategory, fmt, computeAccountBalance } from '../data';
+import { ExpenseCategory, IncomeCategory, TransferItem, fmt, computeAccountBalance } from '../data';
 import { COLORS } from '../theme';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
@@ -57,11 +57,12 @@ interface Props {
   visible: boolean;
   cats: ExpenseCategory[];
   incomeCats: IncomeCategory[];
+  transfers: TransferItem[];
   onConfirm: (payload: AiConfirmPayload) => void;
   onClose: () => void;
 }
 
-export default function AICaptureSheet({ visible, cats, incomeCats, onConfirm, onClose }: Props) {
+export default function AICaptureSheet({ visible, cats, incomeCats, transfers, onConfirm, onClose }: Props) {
   const [step, setStep] = useState<Step>('choose');
   const [fromImage, setFromImage] = useState(false);
   const [textInput, setTextInput] = useState('');
@@ -347,7 +348,7 @@ export default function AICaptureSheet({ visible, cats, incomeCats, onConfirm, o
                           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                             <View style={{ flexDirection: 'row', gap: 5 }}>
                               {incomeCats.map(acc => {
-                                const balance = computeAccountBalance(acc, cats);
+                                const balance = computeAccountBalance(acc, cats, transfers);
                                 return (
                                   <TouchableOpacity key={acc.id} onPress={() => updateItem(it.key, { accountId: acc.id })}
                                     style={[s.catChip, {

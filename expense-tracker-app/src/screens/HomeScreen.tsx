@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Bar from '../components/Bar';
 import Donut from '../components/Donut';
-import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, fmt, MONTHS, WEEKLY_EXPENSE, WEEKLY_INCOME, getCurrentBuddhistYear, computeAccountBalance } from '../data';
+import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, TransferItem, fmt, MONTHS, WEEKLY_EXPENSE, WEEKLY_INCOME, getCurrentBuddhistYear, computeAccountBalance } from '../data';
 import { COLORS, SHADOW } from '../theme';
 
 const SORT_LABELS = ['จัดเรียง ↕', 'มาก → น้อย ↓', 'น้อย → มาก ↑', 'เกินงบก่อน ⚠'];
@@ -15,6 +15,7 @@ const INC_SORT_LABELS = ['จัดเรียง ↕', 'มาก → น้�
 interface Props {
   cats: ExpenseCategory[];
   incomeCats: IncomeCategory[];
+  transfers: TransferItem[];
   totalSpent: number;
   totalIncome: number;
   onCat: (id: string) => void;
@@ -24,10 +25,11 @@ interface Props {
   onBackup: () => void;
   onEditCategory: (type: 'expense' | 'income', catId: string) => void;
   onOpenLockSettings: () => void;
+  onOpenTransfer: () => void;
   syncStatus: 'idle' | 'syncing' | 'error';
 }
 
-export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, onCat, onAdd, onItemPress, onClearAll, onBackup, onEditCategory, onOpenLockSettings, syncStatus }: Props) {
+export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, totalIncome, onCat, onAdd, onItemPress, onClearAll, onBackup, onEditCategory, onOpenLockSettings, onOpenTransfer, syncStatus }: Props) {
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<'expense' | 'income'>('expense');
   const [mo, setMo] = useState(() => new Date().getMonth()); // เดือนปัจจุบันจริงเป็นค่าเริ่มต้นเสมอ
@@ -100,6 +102,11 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
         {/* ตั้งค่าล็อกแอป (รหัสผ่าน + Face ID/Touch ID) */}
         <TouchableOpacity onPress={onOpenLockSettings} hitSlop={10} style={[s.clearBtn, { top: insets.top + 4, right: 88 }]}>
           <Text style={{ fontSize: 14 }}>🔒</Text>
+        </TouchableOpacity>
+
+        {/* โอนเงินระหว่างบัญชี */}
+        <TouchableOpacity onPress={onOpenTransfer} hitSlop={10} style={[s.clearBtn, { top: insets.top + 4, right: 124 }]}>
+          <Text style={{ fontSize: 14 }}>🔁</Text>
         </TouchableOpacity>
 
         {/* Month switcher */}
@@ -300,7 +307,7 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
             {/* Income category list */}
             {sortedIncCats.map(cat => {
               const total = cat.items.reduce((s, i) => s + i.amt, 0);
-              const balance = computeAccountBalance(cat, cats);
+              const balance = computeAccountBalance(cat, cats, transfers);
               const spentFromAccount = total - balance;
               const isOpen = !!incomeOpen[cat.id];
               return (

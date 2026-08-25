@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Modal, Animated, KeyboardAvoidingView, Platform, Pressable,
 } from 'react-native';
-import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, fmt, computeAccountBalance } from '../data';
+import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, TransferItem, fmt, computeAccountBalance } from '../data';
 import { COLORS } from '../theme';
 
 interface EditPayload { oldCatId: string; itemId: number; newCatId: string; updated: { desc: string; amt: number; date: string; accountId?: string } }
@@ -13,6 +13,7 @@ interface Props {
   visible: boolean;
   cats: ExpenseCategory[];
   incomeCats: IncomeCategory[];
+  transfers: TransferItem[];
   editTarget: EditTarget | null;
   onEdit: (p: EditPayload) => void;
   onEditIncome: (p: EditPayload) => void;
@@ -23,7 +24,7 @@ interface Props {
 
 // แก้ไข/ลบรายการที่บันทึกไว้แล้วเท่านั้น — การเพิ่มรายการใหม่ทำผ่าน AICaptureSheet (AI อ่านสลิป/แปลคำสั่ง) แทน
 export default function AddItemSheet({
-  visible, cats, incomeCats, editTarget,
+  visible, cats, incomeCats, transfers, editTarget,
   onEdit, onEditIncome, onDelete, onDeleteIncome, onClose,
 }: Props) {
   const [type, setType] = useState<'expense' | 'income'>('expense');
@@ -142,7 +143,7 @@ export default function AddItemSheet({
                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                       <View style={{ flexDirection: 'row', gap: 5 }}>
                         {incomeCats.map(acc => {
-                          const balance = computeAccountBalance(acc, cats);
+                          const balance = computeAccountBalance(acc, cats, transfers);
                           return (
                             <TouchableOpacity key={acc.id} onPress={() => setAccountId(acc.id)}
                               style={[s.catChip, {

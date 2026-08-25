@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Modal, Animated, KeyboardAvoidingView, Platform, Pressable, Alert,
 } from 'react-native';
-import { ExpenseCategory, IncomeCategory, NoteItem } from '../data';
+import { ExpenseCategory, IncomeCategory, NoteItem, TransferItem } from '../data';
 import { COLORS } from '../theme';
 
 // โครงข้อมูลสำรอง — ต้องตรงกับ payload ที่เก็บใน AsyncStorage (App.tsx)
@@ -11,6 +11,7 @@ export interface BackupData {
   cats: ExpenseCategory[];
   incomeCats: IncomeCategory[];
   notes: NoteItem[];
+  transfers: TransferItem[];
 }
 
 interface Props {
@@ -22,8 +23,10 @@ interface Props {
 
 type Tab = 'export' | 'import';
 
-const isValidBackup = (v: any): v is BackupData =>
-  v && Array.isArray(v.cats) && Array.isArray(v.incomeCats) && Array.isArray(v.notes);
+// transfers เป็นฟีเจอร์ที่เพิ่มมาทีหลัง — ข้อมูลสำรองเก่าอาจไม่มีฟิลด์นี้ ยอมรับและเติม [] ให้แทน
+const isValidBackup = (v: any): v is Omit<BackupData, 'transfers'> & { transfers?: TransferItem[] } =>
+  v && Array.isArray(v.cats) && Array.isArray(v.incomeCats) && Array.isArray(v.notes) &&
+  (v.transfers === undefined || Array.isArray(v.transfers));
 
 export default function BackupSheet({ visible, data, onImport, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('export');
@@ -70,7 +73,7 @@ export default function BackupSheet({ visible, data, onImport, onClose }: Props)
       return;
     }
     confirm('นำเข้าข้อมูลนี้จะแทนที่ข้อมูลปัจจุบันทั้งหมด กู้คืนไม่ได้ ยืนยันหรือไม่?', () => {
-      onImport(parsed);
+      onImport({ ...parsed, transfers: parsed.transfers ?? [] });
       onClose();
     });
   };

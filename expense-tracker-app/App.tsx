@@ -15,8 +15,9 @@ import BackupSheet, { BackupData } from './src/components/BackupSheet';
 import CategoryEditSheet, { CategoryEditTarget, CategorySavePayload } from './src/components/CategoryEditSheet';
 import LockScreen from './src/components/LockScreen';
 import LockSettingsSheet from './src/components/LockSettingsSheet';
+import TransferSheet, { TransferPayload } from './src/components/TransferSheet';
 
-import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, ExpenseItem, IncomeCategory, NoteItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor, computeAccountBalance, generateId } from './src/data';
+import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, ExpenseItem, IncomeCategory, NoteItem, TransferItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor, computeAccountBalance, generateId } from './src/data';
 import { COLORS } from './src/theme';
 import {
   hashPin, isWebAuthnSupported, registerBiometricCredential, verifyBiometricCredential,
@@ -81,6 +82,8 @@ export default function App() {
   const [showNoteSheet, setShowNoteSheet] = useState(false);
   const [noteEditTarget, setNoteEditTarget] = useState<NoteItem | null>(null);
   const [showBackupSheet, setShowBackupSheet] = useState(false);
+  const [showTransferSheet, setShowTransferSheet] = useState(false);
+  const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const [categoryEditTarget, setCategoryEditTarget] = useState<CategoryEditTarget | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
@@ -99,7 +102,7 @@ export default function App() {
   // โหลดข้อมูล — ลอง cloud ก่อนเสมอ (ข้อมูลล่าสุดข้ามเครื่อง/ลิงก์) ถ้าเรียกไม่ได้ค่อย fallback มาที่เครื่องนี้
   useEffect(() => {
     (async () => {
-      let localData: { cats?: ExpenseCategory[]; incomeCats?: IncomeCategory[]; notes?: NoteItem[] } | null = null;
+      let localData: { cats?: ExpenseCategory[]; incomeCats?: IncomeCategory[]; notes?: NoteItem[]; transfers?: TransferItem[] } | null = null;
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) localData = JSON.parse(raw);
@@ -111,6 +114,7 @@ export default function App() {
       let finalCats: ExpenseCategory[] = INIT_CATS;
       let finalIncomeCats: IncomeCategory[] = INIT_INCOME_CATS;
       let finalNotes: NoteItem[] = [];
+      let finalTransfers: TransferItem[] = [];
 
       if (API_BASE_URL) {
         try {
@@ -121,6 +125,7 @@ export default function App() {
               finalCats = data.cats;
               finalIncomeCats = data.incomeCats ?? [];
               finalNotes = data.notes ?? [];
+              finalTransfers = data.transfers ?? [];
               usedCloud = true;
             }
           }
@@ -133,6 +138,7 @@ export default function App() {
         if (localData.cats) finalCats = localData.cats;
         if (localData.incomeCats) finalIncomeCats = localData.incomeCats;
         if (localData.notes) finalNotes = localData.notes;
+        if (localData.transfers) finalTransfers = localData.transfers;
       }
 
       // ซ่อม id รายการที่ชนกัน (บั๊กเก่า: เคยใช้ Date.now() ตรงๆ ทำให้หลายรายการที่เพิ่มพร้อมกัน
@@ -145,6 +151,7 @@ export default function App() {
       setCats(repairedCats);
       setIncomeCats(repairedIncomeCats);
       setNotes(finalNotes);
+      setTransfers(finalTransfers);
       setIsLoaded(true);
     })();
   }, []);
@@ -183,10 +190,10 @@ export default function App() {
     return () => sub.remove();
   }, [pinHash, lockEnabled]);
 
-  // บันทึกข้อมูลทุกครั้งที่ cats/incomeCats/notes เปลี่ยน — เก็บลงเครื่อง (ทันที) + ดัน cloud (หน่วงเล็กน้อย กันยิงถี่)
+  // บันทึกข้อมูลทุกครั้งที่ cats/incomeCats/notes/transfers เปลี่ยน — เก็บลงเครื่อง (ทันที) + ดัน cloud (หน่วงเล็กน้อย กันยิงถี่)
   useEffect(() => {
     if (!isLoaded) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ cats, incomeCats, notes })).catch(e =>
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ cats, incomeCats, notes, transfers })).catch(e =>
       console.warn('บันทึกข้อมูลไม่สำเร็จ', e)
     );
 
@@ -202,7 +209,7 @@ export default function App() {
         const res = await fetch(`${API_BASE_URL}/api/data`, {
           method: 'POST',
           headers: SYNC_HEADERS,
-          body: JSON.stringify({ cats, incomeCats, notes }),
+          body: JSON.stringify({ cats, incomeCats, notes, transfers }),
         });
         setSyncStatus(res.ok ? 'idle' : 'error');
       } catch (e) {
@@ -210,7 +217,7 @@ export default function App() {
         setSyncStatus('error');
       }
     }, 800);
-  }, [cats, incomeCats, notes, isLoaded]);
+  }, [cats, incomeCats, notes, transfers, isLoaded]);
 
   const totalSpent  = useMemo(() => cats.reduce((s, c) => s + c.spent, 0), [cats]);
   const totalIncome = useMemo(() => incomeCats.reduce((s, c) => s + c.items.reduce((ss, i) => ss + i.amt, 0), 0), [incomeCats]);
@@ -340,6 +347,16 @@ export default function App() {
     setCats(backup.cats);
     setIncomeCats(backup.incomeCats);
     setNotes(backup.notes);
+    setTransfers(backup.transfers);
+  };
+
+  // โอนเงินระหว่างบัญชี (= ระหว่าง IncomeCategory สองช่อง) — ไม่แตะ cats/incomeCats เลย
+  // ยอดคงเหลือของแต่ละบัญชีคำนวณสดจาก transfers นี้ผ่าน computeAccountBalance เสมอ (ดู src/data/index.ts)
+  const addTransfer = (payload: TransferPayload) => {
+    setTransfers(ts => [{ id: generateId(), ...payload }, ...ts]);
+  };
+  const deleteTransfer = (id: number) => {
+    setTransfers(ts => ts.filter(t => t.id !== id));
   };
 
   // แก้ไขชื่อ/ไอคอนหมวดหมู่ — ใช้แก้ไอคอนที่ AI เลือกให้ตอนสร้างหมวดใหม่อัตโนมัติ (เช่น หมวดที่ AI ตั้งไอคอนซ้ำ/ไม่เหมาะ)
@@ -356,7 +373,7 @@ export default function App() {
       canDelete = c.spent === 0 && c.count === 0;
       deleteBlockedReason = canDelete ? undefined : 'ลบไม่ได้ เพราะยังมีรายการรายจ่ายบันทึกอยู่ในหมวดนี้';
     } else {
-      const balance = computeAccountBalance(cat as IncomeCategory, cats);
+      const balance = computeAccountBalance(cat as IncomeCategory, cats, transfers);
       canDelete = Math.round(balance * 100) === 0;
       deleteBlockedReason = canDelete ? undefined : 'ลบไม่ได้ เพราะยังมีเงินเหลือในบัญชีนี้';
     }
@@ -502,6 +519,7 @@ export default function App() {
             <HomeScreen
               cats={cats}
               incomeCats={incomeCats}
+              transfers={transfers}
               totalSpent={totalSpent}
               totalIncome={totalIncome}
               onCat={id => setCatId(id)}
@@ -511,6 +529,7 @@ export default function App() {
               onBackup={() => setShowBackupSheet(true)}
               onEditCategory={openEditCategory}
               onOpenLockSettings={() => setShowLockSettings(true)}
+              onOpenTransfer={() => setShowTransferSheet(true)}
               syncStatus={syncStatus}
             />
           )}
@@ -537,6 +556,7 @@ export default function App() {
           visible={showSheet}
           cats={cats}
           incomeCats={incomeCats}
+          transfers={transfers}
           editTarget={editTarget}
           onEdit={editItem}
           onEditIncome={editIncome}
@@ -549,6 +569,7 @@ export default function App() {
           visible={showCapture}
           cats={cats}
           incomeCats={incomeCats}
+          transfers={transfers}
           onConfirm={confirmAiResult}
           onClose={() => setShowCapture(false)}
         />
@@ -563,9 +584,19 @@ export default function App() {
 
         <BackupSheet
           visible={showBackupSheet}
-          data={{ cats, incomeCats, notes }}
+          data={{ cats, incomeCats, notes, transfers }}
           onImport={restoreBackup}
           onClose={() => setShowBackupSheet(false)}
+        />
+
+        <TransferSheet
+          visible={showTransferSheet}
+          cats={cats}
+          incomeCats={incomeCats}
+          transfers={transfers}
+          onTransfer={addTransfer}
+          onDeleteTransfer={deleteTransfer}
+          onClose={() => setShowTransferSheet(false)}
         />
 
         <CategoryEditSheet

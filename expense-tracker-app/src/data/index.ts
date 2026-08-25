@@ -38,6 +38,17 @@ export interface IncomeCategory {
   items: IncomeItem[];
 }
 
+// โอนเงินระหว่างบัญชี (= IncomeCategory สองช่อง) — แยกจาก ExpenseItem/IncomeItem โดยเจตนา
+// เพราะไม่ใช่เงินเข้า-ออกจากระบบจริง (ไม่กระทบ totalIncome/totalSpent รวม) แค่ย้ายเงินระหว่างบัญชีของตัวเอง
+export interface TransferItem {
+  id: number;
+  fromAccountId: string; // id ของ IncomeCategory ต้นทาง
+  toAccountId: string;   // id ของ IncomeCategory ปลายทาง
+  amt: number;
+  date: string;
+  note?: string;
+}
+
 // รายการเตือนจ่ายบิล/ค่าใช้จ่ายที่ต้องจ่าย — แยกต่างหากจาก ExpenseItem/IncomeItem ไม่ผูกกับรายการรายรับ-รายจ่ายจริง
 export interface NoteItem {
   id: number;
@@ -112,13 +123,20 @@ export const generateId = (): number => {
 // คงเหลือของ "บัญชี" (= IncomeCategory หนึ่งช่อง เช่น เงินสด, บัญชี TTB) = เงินที่รับเข้าบัญชีนั้นทั้งหมด
 // หักด้วยรายจ่ายทุกรายการ (ทุกหมวดรายจ่าย) ที่ระบุ accountId ตรงกับบัญชีนี้
 // คำนวณสดจากรายการจริงเสมอ (ไม่เก็บเป็น field แยก) กันข้อมูล balance ค้าง/เพี้ยนจากการแก้ไข-ลบรายการ
-export const computeAccountBalance = (account: IncomeCategory, expenseCats: ExpenseCategory[]): number => {
+// transfers เป็น optional (default []) เพื่อไม่ให้โค้ดเก่าที่เรียกแบบ 2 อาร์กิวเมนต์พัง
+export const computeAccountBalance = (
+  account: IncomeCategory,
+  expenseCats: ExpenseCategory[],
+  transfers: TransferItem[] = [],
+): number => {
   const received = account.items.reduce((s, i) => s + i.amt, 0);
   const spent = expenseCats.reduce(
     (s, c) => s + c.items.reduce((ss, it) => ss + (it.accountId === account.id ? it.amt : 0), 0),
     0,
   );
-  return received - spent;
+  const transferOut = transfers.reduce((s, t) => s + (t.fromAccountId === account.id ? t.amt : 0), 0);
+  const transferIn = transfers.reduce((s, t) => s + (t.toAccountId === account.id ? t.amt : 0), 0);
+  return received - spent - transferOut + transferIn;
 };
 
 // หมวดหมู่ที่ AI capture สร้างขึ้นเองเมื่อไม่มีหมวดเดิมที่เหมาะสม (ดู AICaptureSheet.tsx + ai-proxy/api/parse.ts)
