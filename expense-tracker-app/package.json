@@ -12,6 +12,7 @@
     "expo": "~56.0.5",
     "expo-font": "^56.0.5",
     "expo-image-picker": "~56.0.24",
+    "expo-local-authentication": "~56.0.5",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
