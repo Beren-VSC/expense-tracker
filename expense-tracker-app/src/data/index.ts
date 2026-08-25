@@ -4,6 +4,9 @@ export interface ExpenseItem {
   date: string;
   amt: number;
   receipt: boolean;
+  // บัญชี/แหล่งเงินที่ใช้จ่ายรายการนี้ — อ้างอิง id ของ IncomeCategory (ใช้เป็น "บัญชี" ในตัวแอปนี้)
+  // undefined = รายการเก่าที่บันทึกไว้ก่อนมีฟีเจอร์นี้ ไม่หักออกจากบัญชีไหน
+  accountId?: string;
 }
 
 export interface ExpenseCategory {
@@ -96,6 +99,18 @@ export const MONTHS_SHORT = [
 ];
 
 export const fmt = (n: number): string => '฿' + Number(n).toLocaleString('th-TH');
+
+// คงเหลือของ "บัญชี" (= IncomeCategory หนึ่งช่อง เช่น เงินสด, บัญชี TTB) = เงินที่รับเข้าบัญชีนั้นทั้งหมด
+// หักด้วยรายจ่ายทุกรายการ (ทุกหมวดรายจ่าย) ที่ระบุ accountId ตรงกับบัญชีนี้
+// คำนวณสดจากรายการจริงเสมอ (ไม่เก็บเป็น field แยก) กันข้อมูล balance ค้าง/เพี้ยนจากการแก้ไข-ลบรายการ
+export const computeAccountBalance = (account: IncomeCategory, expenseCats: ExpenseCategory[]): number => {
+  const received = account.items.reduce((s, i) => s + i.amt, 0);
+  const spent = expenseCats.reduce(
+    (s, c) => s + c.items.reduce((ss, it) => ss + (it.accountId === account.id ? it.amt : 0), 0),
+    0,
+  );
+  return received - spent;
+};
 
 // หมวดหมู่ที่ AI capture สร้างขึ้นเองเมื่อไม่มีหมวดเดิมที่เหมาะสม (ดู AICaptureSheet.tsx + ai-proxy/api/parse.ts)
 export const DEFAULT_NEW_CATEGORY_BUDGET = 1000;

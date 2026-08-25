@@ -5,7 +5,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { ExpenseCategory, IncomeCategory } from '../data';
+import { ExpenseCategory, IncomeCategory, fmt, computeAccountBalance } from '../data';
 import { COLORS } from '../theme';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
@@ -30,7 +30,7 @@ export interface AiConfirmPayload {
   catId: string;
   // ใส่มาก็ต่อเมื่อ catId ยังไม่มีอยู่จริง — ให้ App.tsx สร้างหมวดหมู่ใหม่นี้ก่อนบันทึกรายการ
   newCategory?: { label: string; icon: string };
-  item: { desc: string; amt: number; date: string; receipt: boolean };
+  item: { desc: string; amt: number; date: string; receipt: boolean; accountId?: string };
 }
 
 // รายการที่กำลังแก้ไขอยู่ในหน้ายืนยัน — รองรับหลายรายการต่อ 1 คำสั่ง/สลิป
@@ -47,6 +47,8 @@ interface EditableItem {
   aiCategoryId: string;
   aiCategoryLabel: string;
   aiCategoryIcon: string;
+  // บัญชีที่ใช้จ่าย — บังคับเลือกก่อนบันทึกได้เฉพาะรายการที่ type === 'expense'
+  accountId?: string;
 }
 
 type Step = 'choose' | 'text-input' | 'loading' | 'confirm' | 'error';
@@ -169,7 +171,9 @@ export default function AICaptureSheet({ visible, cats, incomeCats, onConfirm, o
     await callBackend({ mode: 'text', text: textInput.trim() }, false);
   };
 
-  const allValid = items.length > 0 && items.every(it => it.desc.trim().length > 0 && Number(it.amt) > 0);
+  const allValid = items.length > 0 && items.every(it =>
+    it.desc.trim().length > 0 && Number(it.amt) > 0 && (it.type !== 'expense' || !!it.accountId)
+  );
 
   const handleConfirmAll = () => {
     if (!allValid) return;
@@ -179,7 +183,7 @@ export default function AICaptureSheet({ visible, cats, incomeCats, onConfirm, o
         type: it.type,
         catId: it.catId,
         newCategory: usingNewCategory ? { label: it.aiCategoryLabel, icon: it.aiCategoryIcon } : undefined,
-        item: { desc: it.desc.trim(), amt: Number(it.amt), date: it.date, receipt: fromImage },
+        item: { desc: it.desc.trim(), amt: Number(it.amt), date: it.date, receipt: fromImage, accountId: it.type === 'expense' ? it.accountId : undefined },
       });
     });
     onClose();
@@ -332,6 +336,39 @@ export default function AICaptureSheet({ visible, cats, incomeCats, onConfirm, o
                         style={s.input}
                       />
                     </View>
+
+                    {/* บัญชีที่ใช้จ่าย — บังคับระบุก่อนบันทึกได้ ใช้หักเงินออกจากบัญชีนั้น */}
+                    {it.type === 'expense' && (
+                      <View style={{ gap: 6, marginBottom: 10 }}>
+                        <Text style={s.fieldLabel}>บัญชีที่ใช้จ่าย *</Text>
+                        {incomeCats.length === 0 ? (
+                          <Text style={{ fontSize: 12, color: COLORS.textDim }}>ยังไม่มีบัญชีให้เลือก — เพิ่มรายรับเข้าบัญชีก่อน</Text>
+                        ) : (
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                            <View style={{ flexDirection: 'row', gap: 5 }}>
+                              {incomeCats.map(acc => {
+                                const balance = computeAccountBalance(acc, cats);
+                                return (
+                                  <TouchableOpacity key={acc.id} onPress={() => updateItem(it.key, { accountId: acc.id })}
+                                    style={[s.catChip, {
+                                      borderColor: it.accountId === acc.id ? acc.color : COLORS.border,
+                                      backgroundColor: it.accountId === acc.id ? acc.color + '18' : COLORS.surface,
+                                    }]}>
+                                    <Text style={{ fontSize: 13 }}>{acc.icon}</Text>
+                                    <Text style={{ fontSize: 11, fontWeight: it.accountId === acc.id ? '600' : '400', color: it.accountId === acc.id ? acc.color : COLORS.textMid }}>
+                                      {acc.th} · คงเหลือ {fmt(balance)}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          </ScrollView>
+                        )}
+                        {!it.accountId && (
+                          <Text style={{ fontSize: 11, color: COLORS.danger }}>⚠ ต้องเลือกบัญชีที่ใช้จ่ายก่อนบันทึก</Text>
+                        )}
+                      </View>
+                    )}
 
                     <View style={{ flexDirection: 'row', gap: 10 }}>
                       <View style={{ flex: 1.4, gap: 6 }}>

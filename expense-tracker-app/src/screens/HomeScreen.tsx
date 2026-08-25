@@ -6,7 +6,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Bar from '../components/Bar';
 import Donut from '../components/Donut';
-import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, fmt, MONTHS, WEEKLY_EXPENSE, WEEKLY_INCOME, getCurrentBuddhistYear } from '../data';
+import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, fmt, MONTHS, WEEKLY_EXPENSE, WEEKLY_INCOME, getCurrentBuddhistYear, computeAccountBalance } from '../data';
 import { COLORS, SHADOW } from '../theme';
 
 const SORT_LABELS = ['จัดเรียง ↕', 'มาก → น้อย ↓', 'น้อย → มาก ↑', 'เกินงบก่อน ⚠'];
@@ -30,8 +30,9 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<'expense' | 'income'>('expense');
   const [mo, setMo] = useState(() => new Date().getMonth()); // เดือนปัจจุบันจริงเป็นค่าเริ่มต้นเสมอ
-  const [open, setOpen] = useState<Record<string, boolean>>({ food: true });
-  const [incomeOpen, setIncomeOpen] = useState<Record<string, boolean>>({ salary: true });
+  // ปิดทุกหมวดหมู่ไว้ก่อนเสมอ — ห้าม default เปิดหมวดใดหมวดหนึ่งไว้ล่วงหน้า (เคยเปิด food/salary ค้างไว้โดยไม่ตั้งใจ)
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [incomeOpen, setIncomeOpen] = useState<Record<string, boolean>>({});
   const [sortMode, setSortMode] = useState(0);
   const [incSortMode, setIncSortMode] = useState(0);
 
@@ -293,6 +294,8 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
             {/* Income category list */}
             {sortedIncCats.map(cat => {
               const total = cat.items.reduce((s, i) => s + i.amt, 0);
+              const balance = computeAccountBalance(cat, cats);
+              const spentFromAccount = total - balance;
               const isOpen = !!incomeOpen[cat.id];
               return (
                 <View key={cat.id}>
@@ -306,7 +309,12 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
                         <Text style={s.catName}>{cat.name}</Text>
                         <Text style={{ fontSize: 14, fontWeight: '700', color: cat.color }}>+{fmt(total)}</Text>
                       </View>
-                      <Text style={s.catSub}>{cat.items.length} รายการ</Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <Text style={s.catSub}>{cat.items.length} รายการ</Text>
+                        {spentFromAccount > 0 && (
+                          <Text style={{ fontSize: 11, color: COLORS.textDim }}>คงเหลือ {fmt(balance)}</Text>
+                        )}
+                      </View>
                     </View>
                     <Text style={{ fontSize: 10, color: COLORS.textDim, marginLeft: 6, transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}>▼</Text>
                   </TouchableOpacity>

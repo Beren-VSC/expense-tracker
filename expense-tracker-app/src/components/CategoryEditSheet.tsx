@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Modal, Animated, KeyboardAvoidingView, Platform, Pressable,
+  StyleSheet, Modal, Animated, KeyboardAvoidingView, Platform, Pressable, Alert,
 } from 'react-native';
 import { COLORS } from '../theme';
 
@@ -10,6 +10,10 @@ export interface CategoryEditTarget {
   id: string;
   name: string;
   icon: string;
+  // ลบได้เฉพาะตอนที่หมวดนี้ "ไม่มีเงินเหลือ" แล้ว — รายจ่าย: ยังไม่เคยมีรายการ, รายรับ/บัญชี: คงเหลือเป็น 0
+  canDelete: boolean;
+  // เหตุผลที่ลบไม่ได้ตอนนี้ — ไว้โชว์อธิบายให้ผู้ใช้เข้าใจ (undefined เมื่อ canDelete = true)
+  deleteBlockedReason?: string;
 }
 
 export interface CategorySavePayload {
@@ -23,6 +27,7 @@ interface Props {
   visible: boolean;
   target: CategoryEditTarget | null;
   onSave: (payload: CategorySavePayload) => void;
+  onDelete: (target: CategoryEditTarget) => void;
   onClose: () => void;
 }
 
@@ -32,7 +37,7 @@ const ICON_PRESETS = [
   '🍜', '☕', '🚇', '⛽', '🏠', '⚡', '💧', '💊', '🎬', '📦', '✈️', '🎓',
 ];
 
-export default function CategoryEditSheet({ visible, target, onSave, onClose }: Props) {
+export default function CategoryEditSheet({ visible, target, onSave, onDelete, onClose }: Props) {
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('💳');
   const slideAnim = useRef(new Animated.Value(500)).current;
@@ -53,6 +58,23 @@ export default function CategoryEditSheet({ visible, target, onSave, onClose }: 
     if (!valid || !target) return;
     onSave({ type: target.type, id: target.id, name: name.trim(), icon: icon.trim() });
     onClose();
+  };
+
+  const handleDelete = () => {
+    if (!target || !target.canDelete) return;
+    const msg = `หมวดหมู่ "${target.name}" จะถูกลบถาวร รวมถึงประวัติรายการทั้งหมดในหมวดนี้ กู้คืนไม่ได้`;
+    if (Platform.OS === 'web') {
+      // react-native-web ไม่รองรับ Alert.alert จริง (เป็น no-op) — ต้องใช้ window.confirm บนเว็บแทน (เหมือน handleClearAll ใน HomeScreen.tsx)
+      if (typeof window !== 'undefined' && window.confirm(`ลบหมวดหมู่นี้?\n${msg}`)) {
+        onDelete(target);
+        onClose();
+      }
+      return;
+    }
+    Alert.alert('ลบหมวดหมู่นี้?', msg, [
+      { text: 'ยกเลิก', style: 'cancel' },
+      { text: 'ลบ', style: 'destructive', onPress: () => { onDelete(target); onClose(); } },
+    ]);
   };
 
   return (
@@ -113,6 +135,19 @@ export default function CategoryEditSheet({ visible, target, onSave, onClose }: 
               style={[s.saveBtn, { backgroundColor: valid ? COLORS.accent : COLORS.border }]}>
               <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>บันทึก</Text>
             </TouchableOpacity>
+
+            {/* ลบหมวดหมู่ — กดได้เฉพาะตอนไม่มีเงินเหลือในหมวดนี้แล้ว กันลบข้อมูลที่ยังใช้อยู่โดยไม่ตั้งใจ */}
+            {target?.canDelete ? (
+              <TouchableOpacity onPress={handleDelete} style={s.deleteBtn}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.danger }}>🗑 ลบหมวดหมู่นี้</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={s.deleteHint}>
+                <Text style={{ fontSize: 11, color: COLORS.textDim, textAlign: 'center' }}>
+                  {target?.deleteBlockedReason ?? 'ลบหมวดหมู่นี้ไม่ได้ตอนนี้'}
+                </Text>
+              </View>
+            )}
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
@@ -129,4 +164,6 @@ const s = StyleSheet.create({
   input: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, fontSize: 14, borderWidth: 1.5, borderColor: COLORS.border, backgroundColor: COLORS.bg, color: COLORS.text },
   iconChip: { width: 40, height: 40, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   saveBtn: { paddingVertical: 13, borderRadius: 12, alignItems: 'center', marginTop: 4 },
+  deleteBtn: { paddingVertical: 13, borderRadius: 12, alignItems: 'center', marginTop: 2, borderWidth: 1.5, borderColor: COLORS.danger },
+  deleteHint: { paddingVertical: 10, paddingHorizontal: 12 },
 });

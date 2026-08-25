@@ -3,10 +3,10 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Modal, Animated, KeyboardAvoidingView, Platform, Pressable,
 } from 'react-native';
-import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, fmt } from '../data';
+import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, fmt, computeAccountBalance } from '../data';
 import { COLORS } from '../theme';
 
-interface EditPayload { oldCatId: string; itemId: number; newCatId: string; updated: { desc: string; amt: number; date: string } }
+interface EditPayload { oldCatId: string; itemId: number; newCatId: string; updated: { desc: string; amt: number; date: string; accountId?: string } }
 export interface EditTarget { type: 'expense' | 'income'; catId: string; item: ExpenseItem | IncomeItem }
 
 interface Props {
@@ -31,6 +31,8 @@ export default function AddItemSheet({
   const [desc, setDesc] = useState('');
   const [amt, setAmt] = useState('');
   const [date, setDate] = useState('May 27');
+  // บัญชีที่ใช้จ่าย — บังคับระบุสำหรับรายจ่ายเท่านั้น (รายรับไม่ต้องมี เพราะตัวรายรับเองคือเงินเข้าบัญชี)
+  const [accountId, setAccountId] = useState<string | undefined>(undefined);
   const [saved, setSaved] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(500)).current;
@@ -43,6 +45,7 @@ export default function AddItemSheet({
       setDesc(editTarget.item.desc);
       setAmt(String(editTarget.item.amt));
       setDate(editTarget.item.date);
+      setAccountId(editTarget.type === 'expense' ? (editTarget.item as ExpenseItem).accountId : undefined);
       Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
     } else if (!visible) {
       slideAnim.setValue(500);
@@ -51,7 +54,8 @@ export default function AddItemSheet({
 
   const handleSave = () => {
     if (!editTarget || !desc.trim() || !Number(amt)) return;
-    const updated = { desc, amt: Number(amt), date };
+    if (type === 'expense' && !accountId) return;
+    const updated = { desc, amt: Number(amt), date, ...(type === 'expense' ? { accountId } : {}) };
     const payload: EditPayload = { oldCatId: editTarget.catId, itemId: editTarget.item.id, newCatId: catId, updated };
     if (type === 'income') onEditIncome(payload);
     else onEdit(payload);
@@ -66,7 +70,7 @@ export default function AddItemSheet({
     onClose();
   };
 
-  const valid = desc.trim().length > 0 && Number(amt) > 0;
+  const valid = desc.trim().length > 0 && Number(amt) > 0 && (type !== 'expense' || !!accountId);
   const activeCats = type === 'income' ? incomeCats : cats;
 
   return (
@@ -127,6 +131,36 @@ export default function AddItemSheet({
                   style={s.input}
                 />
               </View>
+
+              {/* Account (บังคับสำหรับรายจ่าย — ใช้หักเงินออกจากบัญชีที่เลือก) */}
+              {type === 'expense' && (
+                <View style={{ gap: 6 }}>
+                  <Text style={s.fieldLabel}>บัญชีที่ใช้จ่าย *</Text>
+                  {incomeCats.length === 0 ? (
+                    <Text style={{ fontSize: 12, color: COLORS.textDim }}>ยังไม่มีบัญชีให้เลือก — เพิ่มรายรับเข้าบัญชีก่อน</Text>
+                  ) : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <View style={{ flexDirection: 'row', gap: 5 }}>
+                        {incomeCats.map(acc => {
+                          const balance = computeAccountBalance(acc, cats);
+                          return (
+                            <TouchableOpacity key={acc.id} onPress={() => setAccountId(acc.id)}
+                              style={[s.catChip, {
+                                borderColor: accountId === acc.id ? acc.color : COLORS.border,
+                                backgroundColor: accountId === acc.id ? acc.color + '18' : COLORS.surface,
+                              }]}>
+                              <Text style={{ fontSize: 13 }}>{acc.icon}</Text>
+                              <Text style={{ fontSize: 11, fontWeight: accountId === acc.id ? '600' : '400', color: accountId === acc.id ? acc.color : COLORS.textMid }}>
+                                {acc.th} · คงเหลือ {fmt(balance)}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </ScrollView>
+                  )}
+                </View>
+              )}
 
               {/* Amount + Date */}
               <View style={{ flexDirection: 'row', gap: 10 }}>

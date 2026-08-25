@@ -14,7 +14,7 @@ import NoteSheet, { NoteSavePayload } from './src/components/NoteSheet';
 import BackupSheet, { BackupData } from './src/components/BackupSheet';
 import CategoryEditSheet, { CategoryEditTarget, CategorySavePayload } from './src/components/CategoryEditSheet';
 
-import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, IncomeCategory, NoteItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor } from './src/data';
+import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, IncomeCategory, NoteItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor, computeAccountBalance } from './src/data';
 import { COLORS } from './src/theme';
 
 type Screen = 'home' | 'history';
@@ -241,7 +241,21 @@ export default function App() {
     const list = type === 'expense' ? cats : incomeCats;
     const cat = list.find(c => c.id === catId);
     if (!cat) return;
-    setCategoryEditTarget({ type, id: cat.id, name: cat.name, icon: cat.icon });
+
+    // ลบได้เฉพาะตอน "ไม่มีเงินเหลือ" ในหมวดนี้แล้ว — กันลบข้อมูลที่ยังมีรายการ/เงินอยู่โดยไม่ตั้งใจ
+    let canDelete: boolean;
+    let deleteBlockedReason: string | undefined;
+    if (type === 'expense') {
+      const c = cat as ExpenseCategory;
+      canDelete = c.spent === 0 && c.count === 0;
+      deleteBlockedReason = canDelete ? undefined : 'ลบไม่ได้ เพราะยังมีรายการรายจ่ายบันทึกอยู่ในหมวดนี้';
+    } else {
+      const balance = computeAccountBalance(cat as IncomeCategory, cats);
+      canDelete = Math.round(balance * 100) === 0;
+      deleteBlockedReason = canDelete ? undefined : 'ลบไม่ได้ เพราะยังมีเงินเหลือในบัญชีนี้';
+    }
+
+    setCategoryEditTarget({ type, id: cat.id, name: cat.name, icon: cat.icon, canDelete, deleteBlockedReason });
   };
   const closeEditCategory = () => setCategoryEditTarget(null);
   const saveCategoryEdit = (payload: CategorySavePayload) => {
@@ -249,6 +263,14 @@ export default function App() {
       setCats(cs => cs.map(c => c.id === payload.id ? { ...c, name: payload.name, th: payload.name, icon: payload.icon } : c));
     } else {
       setIncomeCats(cs => cs.map(c => c.id === payload.id ? { ...c, name: payload.name, th: payload.name, icon: payload.icon } : c));
+    }
+  };
+  const deleteCategory = (target: CategoryEditTarget) => {
+    if (!target.canDelete) return; // เช็คซ้ำกันเรียกตรงๆ ข้ามเงื่อนไขที่ตั้งไว้ตอนเปิดชีท
+    if (target.type === 'expense') {
+      setCats(cs => cs.filter(c => c.id !== target.id));
+    } else {
+      setIncomeCats(cs => cs.filter(c => c.id !== target.id));
     }
   };
 
@@ -352,6 +374,7 @@ export default function App() {
           visible={!!categoryEditTarget}
           target={categoryEditTarget}
           onSave={saveCategoryEdit}
+          onDelete={deleteCategory}
           onClose={closeEditCategory}
         />
       </SafeAreaProvider>
