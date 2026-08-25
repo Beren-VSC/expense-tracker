@@ -14,7 +14,7 @@ import NoteSheet, { NoteSavePayload } from './src/components/NoteSheet';
 import BackupSheet, { BackupData } from './src/components/BackupSheet';
 import CategoryEditSheet, { CategoryEditTarget, CategorySavePayload } from './src/components/CategoryEditSheet';
 
-import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, IncomeCategory, NoteItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor, computeAccountBalance, generateId } from './src/data';
+import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, ExpenseItem, IncomeCategory, NoteItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor, computeAccountBalance, generateId } from './src/data';
 import { COLORS } from './src/theme';
 
 type Screen = 'home' | 'history';
@@ -47,8 +47,13 @@ function repairDuplicateIds(cats: ExpenseCategory[], incomeCats: IncomeCategory[
   let changed = false;
   const repairedCats = cats.map(c => {
     const r = dedupeItemIds(c.items);
-    if (r.changed) changed = true;
-    return r.changed ? { ...c, items: r.items } : c;
+    // เผื่อข้อมูลเก่าที่ spent/count เพี้ยนไปจาก items จริงแล้ว (เช่น บั๊ก filter โดน id ซ้ำลบพร้อมกัน
+    // ก่อนโค้ดจุดนี้จะถูกแก้ — ดูคอมเมนต์ withRecomputedTotals) — คำนวณ spent/count จาก items ใหม่ให้ตรงเสมอ
+    const spent = r.items.reduce((s, i) => s + i.amt, 0);
+    const count = r.items.length;
+    const totalsChanged = spent !== c.spent || count !== c.count;
+    if (r.changed || totalsChanged) changed = true;
+    return (r.changed || totalsChanged) ? { ...c, items: r.items, spent, count } : c;
   });
   const repairedIncomeCats = incomeCats.map(c => {
     const r = dedupeItemIds(c.items);
@@ -161,8 +166,15 @@ export default function App() {
   const totalSpent  = useMemo(() => cats.reduce((s, c) => s + c.spent, 0), [cats]);
   const totalIncome = useMemo(() => incomeCats.reduce((s, c) => s + c.items.reduce((ss, i) => ss + i.amt, 0), 0), [incomeCats]);
 
+  // spent/count คำนวณจาก items เสมอ (ไม่บวก/ลบเลขแยกต่างหาก) — กันเลขเพี้ยนถ้า filter ดันไปโดนรายการ id ซ้ำ
+  // เข้าด้วยกันมากกว่า 1 ตัว (เคยเกิดบั๊กนี้มาแล้ว: ลบรายการเดียวแต่ id ชนกับอีกรายการ กลาย เป็น items ถูกกรองออกไปพร้อมกัน 2 ตัว
+  // แต่ spent/count เดิมลบแค่ 1 ตัว ทำให้ตัวเลขค้าง ไม่ตรงกับ items จริง)
+  const withRecomputedTotals = (c: ExpenseCategory, items: ExpenseItem[]): ExpenseCategory => ({
+    ...c, items, spent: items.reduce((s, i) => s + i.amt, 0), count: items.length,
+  });
+
   const addItem = ({ catId: cId, item }: { catId: string; item: any }) => {
-    setCats(cs => cs.map(c => c.id === cId ? { ...c, items: [item, ...c.items], spent: c.spent + item.amt, count: c.count + 1 } : c));
+    setCats(cs => cs.map(c => c.id === cId ? withRecomputedTotals(c, [item, ...c.items]) : c));
   };
   const addIncome = ({ catId: cId, item }: { catId: string; item: any }) => {
     setIncomeCats(cs => cs.map(c => c.id === cId ? { ...c, items: [item, ...c.items] } : c));
@@ -176,11 +188,11 @@ export default function App() {
         const item = c.items.find(i => i.id === itemId);
         if (!item) return c;
         removedItem = item;
-        return { ...c, items: c.items.filter(i => i.id !== itemId), spent: c.spent - item.amt, count: c.count - 1 };
+        return withRecomputedTotals(c, c.items.filter(i => i.id !== itemId));
       });
       if (!removedItem) return cs;
       const newItem = { ...removedItem, ...updated };
-      return removed.map(c => c.id === newCatId ? { ...c, items: [newItem, ...c.items], spent: c.spent + newItem.amt, count: c.count + 1 } : c);
+      return removed.map(c => c.id === newCatId ? withRecomputedTotals(c, [newItem, ...c.items]) : c);
     });
   };
   const deleteItem = (cId: string, itemId: number) => {
@@ -188,7 +200,7 @@ export default function App() {
       if (c.id !== cId) return c;
       const item = c.items.find(i => i.id === itemId);
       if (!item) return c;
-      return { ...c, items: c.items.filter(i => i.id !== itemId), spent: c.spent - item.amt, count: c.count - 1 };
+      return withRecomputedTotals(c, c.items.filter(i => i.id !== itemId));
     }));
   };
 
