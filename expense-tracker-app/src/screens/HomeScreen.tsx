@@ -53,11 +53,12 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
   }, [cats, sortMode]);
 
   const sortedIncCats = useMemo(() => {
-    const t = (c: IncomeCategory) => c.items.reduce((s, i) => s + i.amt, 0);
-    if (incSortMode === 1) return [...incomeCats].sort((a, b) => t(b) - t(a));
-    if (incSortMode === 2) return [...incomeCats].sort((a, b) => t(a) - t(b));
+    // เรียงตามยอดคงเหลือจริง (หลังหักรายจ่าย/โอนออก บวกโอนเข้า) — ให้ตรงกับตัวเลขที่โชว์ในแต่ละแถว
+    const bal = (c: IncomeCategory) => computeAccountBalance(c, cats, transfers);
+    if (incSortMode === 1) return [...incomeCats].sort((a, b) => bal(b) - bal(a));
+    if (incSortMode === 2) return [...incomeCats].sort((a, b) => bal(a) - bal(b));
     return incomeCats;
-  }, [incomeCats, incSortMode]);
+  }, [incomeCats, incSortMode, cats, transfers]);
 
   const weeklyData = view === 'income' ? WEEKLY_INCOME : WEEKLY_EXPENSE;
   const maxWeekly = view === 'income' ? maxIW : maxW;
@@ -304,12 +305,10 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
               </TouchableOpacity>
             </View>
 
-            {/* Income category list */}
+            {/* Income category list — ยอดที่โชว์ในแถวคือ "ยอดคงเหลือจริง" ของบัญชีนั้น
+                (เงินรับเข้าทั้งหมด หักรายจ่าย/โอนออก บวกโอนเข้า) ไม่ใช่แค่ยอดรับดิบ */}
             {sortedIncCats.map(cat => {
-              const total = cat.items.reduce((s, i) => s + i.amt, 0);
               const balance = computeAccountBalance(cat, cats, transfers);
-              // ต่างจาก total เมื่อไหร่ก็ตาม (ไม่ว่าจะน้อยลงเพราะจ่าย/โอนออก หรือมากขึ้นเพราะโอนเข้า) ต้องโชว์ให้เห็น
-              const balanceDiffersFromTotal = Math.round(balance * 100) !== Math.round(total * 100);
               const isOpen = !!incomeOpen[cat.id];
               return (
                 <View key={cat.id}>
@@ -321,14 +320,11 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
                         <Text style={s.catName}>{cat.name}</Text>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: cat.color }}>+{fmt(total)}</Text>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: balance < 0 ? COLORS.danger : cat.color }}>
+                          {balance < 0 ? '-' : '+'}{fmt(Math.abs(balance))}
+                        </Text>
                       </View>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <Text style={s.catSub}>{cat.items.length} รายการ</Text>
-                        {balanceDiffersFromTotal && (
-                          <Text style={{ fontSize: 11, color: COLORS.textDim }}>คงเหลือ {fmt(balance)}</Text>
-                        )}
-                      </View>
+                      <Text style={s.catSub}>{cat.items.length} รายการ</Text>
                     </View>
                     <Text style={{ fontSize: 10, color: COLORS.textDim, marginLeft: 6, transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}>▼</Text>
                   </TouchableOpacity>
