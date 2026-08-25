@@ -6,7 +6,6 @@ import {
 import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, fmt } from '../data';
 import { COLORS } from '../theme';
 
-interface AddPayload { catId: string; item: { id: number; desc: string; amt: number; date: string; receipt: boolean } }
 interface EditPayload { oldCatId: string; itemId: number; newCatId: string; updated: { desc: string; amt: number; date: string } }
 export interface EditTarget { type: 'expense' | 'income'; catId: string; item: ExpenseItem | IncomeItem }
 
@@ -14,9 +13,7 @@ interface Props {
   visible: boolean;
   cats: ExpenseCategory[];
   incomeCats: IncomeCategory[];
-  editTarget?: EditTarget | null;
-  onAdd: (p: AddPayload) => void;
-  onAddIncome: (p: AddPayload) => void;
+  editTarget: EditTarget | null;
   onEdit: (p: EditPayload) => void;
   onEditIncome: (p: EditPayload) => void;
   onDelete: (catId: string, itemId: number) => void;
@@ -24,11 +21,11 @@ interface Props {
   onClose: () => void;
 }
 
+// แก้ไข/ลบรายการที่บันทึกไว้แล้วเท่านั้น — การเพิ่มรายการใหม่ทำผ่าน AICaptureSheet (AI อ่านสลิป/แปลคำสั่ง) แทน
 export default function AddItemSheet({
   visible, cats, incomeCats, editTarget,
-  onAdd, onAddIncome, onEdit, onEditIncome, onDelete, onDeleteIncome, onClose,
+  onEdit, onEditIncome, onDelete, onDeleteIncome, onClose,
 }: Props) {
-  const isEdit = !!editTarget;
   const [type, setType] = useState<'expense' | 'income'>('expense');
   const [catId, setCatId] = useState('food');
   const [desc, setDesc] = useState('');
@@ -39,45 +36,25 @@ export default function AddItemSheet({
   const slideAnim = useRef(new Animated.Value(500)).current;
 
   useEffect(() => {
-    if (visible) {
+    if (visible && editTarget) {
       setSaved(false);
-      if (editTarget) {
-        setType(editTarget.type);
-        setCatId(editTarget.catId);
-        setDesc(editTarget.item.desc);
-        setAmt(String(editTarget.item.amt));
-        setDate(editTarget.item.date);
-      } else {
-        setType('expense');
-        setCatId('food');
-        setDesc('');
-        setAmt('');
-      }
+      setType(editTarget.type);
+      setCatId(editTarget.catId);
+      setDesc(editTarget.item.desc);
+      setAmt(String(editTarget.item.amt));
+      setDate(editTarget.item.date);
       Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
-    } else {
+    } else if (!visible) {
       slideAnim.setValue(500);
     }
   }, [visible, editTarget]);
 
-  const switchType = (t: 'expense' | 'income') => {
-    if (isEdit) return; // ไม่ให้สลับ expense/income ระหว่างแก้ไข
-    setType(t);
-    setCatId(t === 'income' ? 'salary' : 'food');
-    setDesc(''); setAmt('');
-  };
-
   const handleSave = () => {
-    if (!desc.trim() || !Number(amt)) return;
-    if (isEdit && editTarget) {
-      const updated = { desc, amt: Number(amt), date };
-      const payload: EditPayload = { oldCatId: editTarget.catId, itemId: editTarget.item.id, newCatId: catId, updated };
-      if (type === 'income') onEditIncome(payload);
-      else onEdit(payload);
-    } else {
-      const item = { id: Date.now(), desc, amt: Number(amt), date, receipt: false };
-      if (type === 'income') onAddIncome({ catId, item });
-      else onAdd({ catId, item });
-    }
+    if (!editTarget || !desc.trim() || !Number(amt)) return;
+    const updated = { desc, amt: Number(amt), date };
+    const payload: EditPayload = { oldCatId: editTarget.catId, itemId: editTarget.item.id, newCatId: catId, updated };
+    if (type === 'income') onEditIncome(payload);
+    else onEdit(payload);
     setSaved(true);
     setTimeout(() => { setSaved(false); onClose(); }, 900);
   };
@@ -104,24 +81,10 @@ export default function AddItemSheet({
 
           {/* Title */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8, paddingTop: 4 }}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.text }}>{isEdit ? 'แก้ไขรายการ' : 'เพิ่มรายการ'}</Text>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.text }}>แก้ไขรายการ</Text>
             <TouchableOpacity onPress={onClose} style={s.closeBtn}>
               <Text style={{ fontSize: 14, color: COLORS.textMid }}>✕</Text>
             </TouchableOpacity>
-          </View>
-
-          {/* Type toggle */}
-          <View style={[s.toggle, isEdit && { opacity: 0.5 }]}>
-            {(['expense', 'income'] as const).map(t => (
-              <TouchableOpacity key={t} disabled={isEdit} onPress={() => switchType(t)} style={[s.toggleBtn, type === t && {
-                backgroundColor: COLORS.surface,
-                shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2
-              }]}>
-                <Text style={{ fontSize: 13, fontWeight: type === t ? '600' : '400', color: type === t ? (t === 'income' ? COLORS.income : COLORS.accent) : COLORS.textDim }}>
-                  {t === 'expense' ? '💸 รายจ่าย' : '💰 รายรับ'}
-                </Text>
-              </TouchableOpacity>
-            ))}
           </View>
 
           {saved ? (
@@ -130,7 +93,7 @@ export default function AddItemSheet({
                 <Text style={{ fontSize: 28 }}>✓</Text>
               </View>
               <Text style={{ fontSize: 16, fontWeight: '600', color: COLORS.text }}>บันทึกแล้ว!</Text>
-              <Text style={{ fontSize: 13, color: COLORS.textDim }}>{isEdit ? 'แก้ไขรายการเรียบร้อย' : 'รายการถูกเพิ่มเรียบร้อย'}</Text>
+              <Text style={{ fontSize: 13, color: COLORS.textDim }}>แก้ไขรายการเรียบร้อย</Text>
             </View>
           ) : (
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, gap: 14 }}>
@@ -193,17 +156,13 @@ export default function AddItemSheet({
               {/* Save button */}
               <TouchableOpacity onPress={handleSave} disabled={!valid}
                 style={[s.saveBtn, { backgroundColor: valid ? (type === 'income' ? COLORS.income : COLORS.accent) : COLORS.border }]}>
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>
-                  {isEdit ? 'บันทึกการแก้ไข' : (type === 'income' ? 'บันทึกรายรับ' : 'บันทึกรายจ่าย')}
-                </Text>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#fff' }}>บันทึกการแก้ไข</Text>
               </TouchableOpacity>
 
-              {/* Delete button (edit mode only) */}
-              {isEdit && (
-                <TouchableOpacity onPress={handleDelete} style={s.deleteBtn}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.danger }}>🗑 ลบรายการนี้</Text>
-                </TouchableOpacity>
-              )}
+              {/* Delete button */}
+              <TouchableOpacity onPress={handleDelete} style={s.deleteBtn}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.danger }}>🗑 ลบรายการนี้</Text>
+              </TouchableOpacity>
             </ScrollView>
           )}
         </Animated.View>
@@ -216,8 +175,6 @@ const s = StyleSheet.create({
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' },
   sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: COLORS.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
   closeBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
-  toggle: { flexDirection: 'row', backgroundColor: COLORS.surfaceAlt, borderRadius: 10, padding: 3, marginHorizontal: 16, marginBottom: 6 },
-  toggleBtn: { flex: 1, padding: 8, borderRadius: 8, alignItems: 'center' },
   successBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingVertical: 48 },
   checkCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#4dcaa3', alignItems: 'center', justifyContent: 'center' },
   fieldLabel: { fontSize: 10, fontWeight: '600', color: COLORS.textMid, textTransform: 'uppercase', letterSpacing: 0.7 },

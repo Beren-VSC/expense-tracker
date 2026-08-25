@@ -1,0 +1,25 @@
+{
+  "name": "expense-ai-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "dev:local": "tsx watch --env-file=.env dev-server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Backend proxy: เก็บ GEMINI_API_KEY ฝั่ง server แล้วอ่านสลิป/แปลคำสั่งข้อความให้ expense-tracker-app (Gemini API free tier)",
+  "dependencies": {
+    "@google/genai": "^2.18.0",
+    "@upstash/redis": "^1.38.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@vercel/node": "^5.10.1",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  }
+}

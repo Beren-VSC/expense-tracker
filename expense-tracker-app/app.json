@@ -20,6 +20,16 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "แอปต้องการเข้าถึงรูปภาพเพื่อให้คุณแนบรูปสลิป/ใบเสร็จ",
+          "cameraPermission": "แอปต้องการเข้าถึงกล้องเพื่อถ่ายรูปสลิป/ใบเสร็จ",
+          "microphonePermission": false
+        }
+      ]
+    ]
   }
 }

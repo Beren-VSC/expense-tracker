@@ -1,12 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, Pressable,
+  StyleSheet, Pressable, Alert, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Bar from '../components/Bar';
 import Donut from '../components/Donut';
-import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, fmt, MONTHS, WEEKLY_EXPENSE, WEEKLY_INCOME } from '../data';
+import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, fmt, MONTHS, WEEKLY_EXPENSE, WEEKLY_INCOME, getCurrentBuddhistYear } from '../data';
 import { COLORS, SHADOW } from '../theme';
 
 const SORT_LABELS = ['จัดเรียง ↕', 'มาก → น้อย ↓', 'น้อย → มาก ↑', 'เกินงบก่อน ⚠'];
@@ -20,12 +20,16 @@ interface Props {
   onCat: (id: string) => void;
   onAdd: () => void;
   onItemPress: (type: 'expense' | 'income', catId: string, item: ExpenseItem | IncomeItem) => void;
+  onClearAll: () => void;
+  onBackup: () => void;
+  onEditCategory: (type: 'expense' | 'income', catId: string) => void;
+  syncStatus: 'idle' | 'syncing' | 'error';
 }
 
-export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, onCat, onAdd, onItemPress }: Props) {
+export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, onCat, onAdd, onItemPress, onClearAll, onBackup, onEditCategory, syncStatus }: Props) {
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<'expense' | 'income'>('expense');
-  const [mo, setMo] = useState(4);
+  const [mo, setMo] = useState(() => new Date().getMonth()); // เดือนปัจจุบันจริงเป็นค่าเริ่มต้นเสมอ
   const [open, setOpen] = useState<Record<string, boolean>>({ food: true });
   const [incomeOpen, setIncomeOpen] = useState<Record<string, boolean>>({ salary: true });
   const [sortMode, setSortMode] = useState(0);
@@ -59,17 +63,45 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
     ? incomeCats.map(c => ({ spent: c.items.reduce((s, i) => s + i.amt, 0), color: c.color, _isIncome: true }))
     : cats;
 
+  const handleClearAll = () => {
+    // react-native-web ไม่รองรับ Alert.alert จริง (เป็น no-op) — ต้องใช้ window.confirm บนเว็บแทน
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('ล้างข้อมูลทั้งหมด?\nรายรับ-รายจ่ายที่บันทึกไว้ทั้งหมดจะถูกลบถาวร กู้คืนไม่ได้')) {
+        onClearAll();
+      }
+      return;
+    }
+    Alert.alert(
+      'ล้างข้อมูลทั้งหมด?',
+      'รายรับ-รายจ่ายที่บันทึกไว้ทั้งหมดจะถูกลบถาวร กู้คืนไม่ได้',
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        { text: 'ล้างข้อมูล', style: 'destructive', onPress: onClearAll },
+      ],
+    );
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
       {/* HERO */}
       <View style={{ backgroundColor: COLORS.hero, paddingTop: insets.top + 4, paddingHorizontal: 16, paddingBottom: 14 }}>
+        {/* ล้างข้อมูลทั้งหมด */}
+        <TouchableOpacity onPress={handleClearAll} hitSlop={10} style={[s.clearBtn, { top: insets.top + 4 }]}>
+          <Text style={{ fontSize: 14 }}>🗑</Text>
+        </TouchableOpacity>
+
+        {/* สำรอง/กู้คืนข้อมูล — ย้ายข้อมูลข้ามลิงก์เมื่อ URL เปลี่ยน */}
+        <TouchableOpacity onPress={onBackup} hitSlop={10} style={[s.clearBtn, { top: insets.top + 4, right: 52 }]}>
+          <Text style={{ fontSize: 14 }}>💾</Text>
+        </TouchableOpacity>
+
         {/* Month switcher */}
         <View style={s.monthRow}>
           <TouchableOpacity onPress={() => setMo(m => Math.max(0, m - 1))} hitSlop={12}>
             <Text style={s.chevron}>‹</Text>
           </TouchableOpacity>
-          <Text style={s.monthLabel}>{MONTHS[mo]} 2569</Text>
-          <TouchableOpacity onPress={() => setMo(m => Math.min(5, m + 1))} hitSlop={12}>
+          <Text style={s.monthLabel}>{MONTHS[mo]} {getCurrentBuddhistYear()}</Text>
+          <TouchableOpacity onPress={() => setMo(m => Math.min(11, m + 1))} hitSlop={12}>
             <Text style={s.chevron}>›</Text>
           </TouchableOpacity>
         </View>
@@ -78,7 +110,11 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
           <Donut cats={donutCats} size={78} />
           <View style={{ flex: 1 }}>
-            <Text style={s.netLabel}>คงเหลือสุทธิ</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Text style={s.netLabel}>คงเหลือสุทธิ</Text>
+              {syncStatus === 'syncing' && <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>☁ กำลังซิงค์...</Text>}
+              {syncStatus === 'error' && <Text style={{ fontSize: 10, color: COLORS.danger }}>☁ ซิงค์ไม่สำเร็จ</Text>}
+            </View>
             <Text style={s.netAmount}>{fmt(totalIncome - totalSpent)}</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginVertical: 4 }}>
               <Text style={{ fontSize: 11, color: '#6ee7b7', fontWeight: '500' }}>↑ {fmt(totalIncome)}</Text>
@@ -146,7 +182,7 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
                     <Text style={{ fontSize: 12, color: COLORS.text }}>{cat.icon} {cat.name}</Text>
                     <View style={{ flexDirection: 'row', gap: 4 }}>
                       <Text style={{ fontSize: 12, fontWeight: '700', color: cat.color }}>{fmt(cat.spent)}</Text>
-                      <Text style={{ fontSize: 10, color: COLORS.textDim }}>{Math.round(cat.spent / totalSpent * 100)}%</Text>
+                      <Text style={{ fontSize: 10, color: COLORS.textDim }}>{totalSpent > 0 ? Math.round(cat.spent / totalSpent * 100) : 0}%</Text>
                     </View>
                   </View>
                   <Bar pct={cat.spent / maxExp * 100} color={cat.color} bg={COLORS.surfaceAlt} h={6} />
@@ -173,19 +209,16 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
                 <View key={cat.id}>
                   <TouchableOpacity onPress={() => setOpen(o => ({ ...o, [cat.id]: !o[cat.id] }))}
                     style={[s.catRow, { borderBottomWidth: 1, borderColor: COLORS.border }]}>
-                    <View style={[s.catIcon, { backgroundColor: cat.color + '20' }]}>
+                    <TouchableOpacity onPress={() => onEditCategory('expense', cat.id)} style={[s.catIcon, { backgroundColor: cat.color + '20' }]}>
                       <Text style={{ fontSize: 18 }}>{cat.icon}</Text>
-                    </View>
+                    </TouchableOpacity>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
                         <Text style={s.catName}>{cat.name}</Text>
                         <Text style={{ fontSize: 14, fontWeight: '700', color: over ? COLORS.danger : COLORS.text }}>{fmt(cat.spent)}</Text>
                       </View>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3 }}>
+                      <View style={{ marginTop: 3 }}>
                         <Text style={s.catSub}>{cat.count} รายการ</Text>
-                        <Text style={{ fontSize: 10, color: over ? COLORS.danger : COLORS.textDim }}>
-                          {over ? '⚠ เกินงบ' : `เหลือ ${fmt(cat.budget - cat.spent)}`}
-                        </Text>
                       </View>
                       <View style={{ marginTop: 5 }}>
                         <Bar pct={pct} color={over ? COLORS.danger : cat.color} bg={COLORS.surfaceAlt} />
@@ -265,9 +298,9 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
                 <View key={cat.id}>
                   <TouchableOpacity onPress={() => setIncomeOpen(o => ({ ...o, [cat.id]: !o[cat.id] }))}
                     style={[s.catRow, { borderBottomWidth: 1, borderColor: COLORS.border }]}>
-                    <View style={[s.catIcon, { backgroundColor: cat.color + '20' }]}>
+                    <TouchableOpacity onPress={() => onEditCategory('income', cat.id)} style={[s.catIcon, { backgroundColor: cat.color + '20' }]}>
                       <Text style={{ fontSize: 18 }}>{cat.icon}</Text>
-                    </View>
+                    </TouchableOpacity>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
                         <Text style={s.catName}>{cat.name}</Text>
@@ -310,6 +343,7 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
 }
 
 const s = StyleSheet.create({
+  clearBtn: { position: 'absolute', right: 16, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', zIndex: 1 },
   monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 },
   chevron: { fontSize: 22, color: 'rgba(255,255,255,0.35)', paddingHorizontal: 6 },
   monthLabel: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.65)' },
