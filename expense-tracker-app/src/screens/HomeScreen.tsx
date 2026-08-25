@@ -6,11 +6,35 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Bar from '../components/Bar';
 import Donut from '../components/Donut';
-import { ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, TransferItem, fmt, MONTHS, WEEKLY_EXPENSE, WEEKLY_INCOME, getCurrentBuddhistYear, computeAccountBalance } from '../data';
+import {
+  ExpenseCategory, ExpenseItem, IncomeCategory, IncomeItem, TransferItem, fmt, MONTHS, MONTHS_SHORT,
+  getCurrentBuddhistYear, getDaysInMonth, getFirstWeekdayMonFirst, computeAccountBalance,
+} from '../data';
 import { COLORS, SHADOW } from '../theme';
 
 const SORT_LABELS = ['จัดเรียง ↕', 'มาก → น้อย ↓', 'น้อย → มาก ↑', 'เกินงบก่อน ⚠'];
 const INC_SORT_LABELS = ['จัดเรียง ↕', 'มาก → น้อย ↓', 'น้อย → มาก ↑'];
+
+// รวมยอดตามสัปดาห์ปฏิทินของเดือนที่กำลังดู (สัปดาห์เริ่มจันทร์ ปฏิทินแบบเดียวกับ HistoryScreen)
+// วันที่ของแต่ละรายการเป็นข้อความ "D MMM" แบบย่อ (เช่น "25 ส.ค.") — พาร์สวันที่โดยเทียบกับตัวย่อเดือนที่กำลังดู
+// ปีอ้างอิงจากปีปัจจุบันจริงเสมอ (หน้านี้ไม่มี year state แยกเหมือน HistoryScreen)
+function computeWeeklyTotals(items: { date: string; amt: number }[], monthIndex: number): number[] {
+  const year = new Date().getFullYear();
+  const daysInMonth = getDaysInMonth(year, monthIndex);
+  const firstWeekday = getFirstWeekdayMonFirst(year, monthIndex);
+  const weekCount = Math.ceil((firstWeekday + daysInMonth) / 7);
+  const monthShort = MONTHS_SHORT[monthIndex];
+  const dayMatchRegex = new RegExp(`^(\\d+)\\s*${monthShort.replace(/\./g, '\\.')}`);
+  const sums = new Array(weekCount).fill(0);
+  items.forEach(item => {
+    const m = item.date.match(dayMatchRegex);
+    if (!m) return;
+    const day = Number(m[1]);
+    if (day < 1 || day > daysInMonth) return;
+    sums[Math.floor((firstWeekday + day - 1) / 7)] += item.amt;
+  });
+  return sums;
+}
 
 interface Props {
   cats: ExpenseCategory[];
@@ -43,8 +67,18 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
   const maxExp = Math.max(...topExp.map(c => c.spent), 1);
   // ยอดรวม "คงเหลือ" ของทุกบัญชี (ไม่ใช่ยอดรับดิบ) — ให้สัดส่วนรายรับด้านล่างตรงกับตัวเลขที่โชว์จริงในแต่ละบัญชี
   const incTotal = incomeCats.reduce((s, c) => s + computeAccountBalance(c, cats, transfers), 0);
-  const maxW = Math.max(...WEEKLY_EXPENSE);
-  const maxIW = Math.max(...WEEKLY_INCOME);
+
+  // รายจ่าย/รายรับรายสัปดาห์ของเดือนที่กำลังดู (mo) — คำนวณสดจากรายการจริงเสมอ (เดิม fix เป็น [0,0,0,0,0,0] ตลอด ไม่เคยอัปเดต)
+  const weeklyExpense = useMemo(
+    () => computeWeeklyTotals(cats.flatMap(c => c.items), mo),
+    [cats, mo],
+  );
+  const weeklyIncome = useMemo(
+    () => computeWeeklyTotals(incomeCats.flatMap(c => c.items), mo),
+    [incomeCats, mo],
+  );
+  const maxW = Math.max(...weeklyExpense, 1);
+  const maxIW = Math.max(...weeklyIncome, 1);
 
   const sortedCats = useMemo(() => {
     if (sortMode === 1) return [...cats].sort((a, b) => b.spent - a.spent);
@@ -61,7 +95,7 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
     return incomeCats;
   }, [incomeCats, incSortMode, cats, transfers]);
 
-  const weeklyData = view === 'income' ? WEEKLY_INCOME : WEEKLY_EXPENSE;
+  const weeklyData = view === 'income' ? weeklyIncome : weeklyExpense;
   const maxWeekly = view === 'income' ? maxIW : maxW;
   const weeklyColor = view === 'income' ? COLORS.income : COLORS.accent;
 

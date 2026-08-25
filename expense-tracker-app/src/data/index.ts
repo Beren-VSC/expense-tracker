@@ -91,9 +91,6 @@ export const INIT_INCOME_CATS: IncomeCategory[] = [
   { id: 'parttime', name: 'Part-time', th: 'พาร์ทไทม์', icon: '🎯', color: '#f59e0b', items: [] },
 ];
 
-export const WEEKLY_EXPENSE = [0, 0, 0, 0, 0, 0];
-export const WEEKLY_INCOME  = [0, 0, 0, 0, 0, 0];
-
 export const HISTORY: MonthHistory[] = [];
 
 export const INCOME_HISTORY: IncomeHistory[] = [];
