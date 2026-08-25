@@ -14,7 +14,7 @@ import NoteSheet, { NoteSavePayload } from './src/components/NoteSheet';
 import BackupSheet, { BackupData } from './src/components/BackupSheet';
 import CategoryEditSheet, { CategoryEditTarget, CategorySavePayload } from './src/components/CategoryEditSheet';
 
-import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, IncomeCategory, NoteItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor, computeAccountBalance } from './src/data';
+import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, IncomeCategory, NoteItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor, computeAccountBalance, generateId } from './src/data';
 import { COLORS } from './src/theme';
 
 type Screen = 'home' | 'history';
@@ -26,6 +26,37 @@ const STORAGE_KEY = '@expense_tracker/data';
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
 const APP_SECRET = process.env.EXPO_PUBLIC_APP_SECRET ?? '';
 const SYNC_HEADERS = { 'Content-Type': 'application/json', 'x-app-secret': APP_SECRET };
+
+// ซ่อม id รายการที่ชนกันภายในหมวดหมู่เดียวกัน (ดูคอมเมนต์ generateId ใน src/data/index.ts) —
+// เจอ id ซ้ำ เก็บตัวแรกไว้เหมือนเดิม แจก id ใหม่ให้ตัวถัดๆ ไปที่ซ้ำ ไม่แตะข้อมูลอื่นเลย
+function dedupeItemIds<T extends { id: number }>(items: T[]): { items: T[]; changed: boolean } {
+  const seen = new Set<number>();
+  let changed = false;
+  const result = items.map(item => {
+    if (seen.has(item.id)) {
+      changed = true;
+      return { ...item, id: generateId() };
+    }
+    seen.add(item.id);
+    return item;
+  });
+  return { items: result, changed };
+}
+
+function repairDuplicateIds(cats: ExpenseCategory[], incomeCats: IncomeCategory[]) {
+  let changed = false;
+  const repairedCats = cats.map(c => {
+    const r = dedupeItemIds(c.items);
+    if (r.changed) changed = true;
+    return r.changed ? { ...c, items: r.items } : c;
+  });
+  const repairedIncomeCats = incomeCats.map(c => {
+    const r = dedupeItemIds(c.items);
+    if (r.changed) changed = true;
+    return r.changed ? { ...c, items: r.items } : c;
+  });
+  return { cats: repairedCats, incomeCats: repairedIncomeCats, changed };
+}
 
 export default function App() {
   const [cats, setCats] = useState<ExpenseCategory[]>(INIT_CATS);
@@ -57,16 +88,19 @@ export default function App() {
       }
 
       let usedCloud = false;
+      let finalCats: ExpenseCategory[] = INIT_CATS;
+      let finalIncomeCats: IncomeCategory[] = INIT_INCOME_CATS;
+      let finalNotes: NoteItem[] = [];
+
       if (API_BASE_URL) {
         try {
           const res = await fetch(`${API_BASE_URL}/api/data`, { headers: SYNC_HEADERS });
           if (res.ok) {
             const { data } = await res.json();
             if (data && Array.isArray(data.cats)) {
-              skipNextPush.current = true;
-              setCats(data.cats);
-              setIncomeCats(data.incomeCats ?? []);
-              setNotes(data.notes ?? []);
+              finalCats = data.cats;
+              finalIncomeCats = data.incomeCats ?? [];
+              finalNotes = data.notes ?? [];
               usedCloud = true;
             }
           }
@@ -76,10 +110,21 @@ export default function App() {
       }
 
       if (!usedCloud && localData) {
-        if (localData.cats) setCats(localData.cats);
-        if (localData.incomeCats) setIncomeCats(localData.incomeCats);
-        if (localData.notes) setNotes(localData.notes);
+        if (localData.cats) finalCats = localData.cats;
+        if (localData.incomeCats) finalIncomeCats = localData.incomeCats;
+        if (localData.notes) finalNotes = localData.notes;
       }
+
+      // ซ่อม id รายการที่ชนกัน (บั๊กเก่า: เคยใช้ Date.now() ตรงๆ ทำให้หลายรายการที่เพิ่มพร้อมกัน
+      // ได้ id ซ้ำ แล้วรายการหนึ่งหายไปจากลิสต์ที่แสดงเพราะ React key ชนกัน) — ไม่เสียข้อมูลใดๆ แค่แจก id ใหม่ให้ตัวที่ซ้ำ
+      const { cats: repairedCats, incomeCats: repairedIncomeCats, changed } = repairDuplicateIds(finalCats, finalIncomeCats);
+
+      // ข้ามการดันขึ้น cloud รอบแรกเฉพาะตอนที่ดึงมาจาก cloud แล้ว "ไม่มีอะไรต้องซ่อม" (ข้อมูลเหมือนเดิมทุกประการ)
+      // ถ้าซ่อมข้อมูลไป ต้องดันกลับขึ้น cloud ทันทีเพื่อให้เครื่อง/ลิงก์อื่นเห็น id ที่แก้แล้วด้วย
+      skipNextPush.current = usedCloud && !changed;
+      setCats(repairedCats);
+      setIncomeCats(repairedIncomeCats);
+      setNotes(finalNotes);
       setIsLoaded(true);
     })();
   }, []);
@@ -194,8 +239,8 @@ export default function App() {
       if (payload.type === 'income') ensureIncomeCategory(payload.catId, payload.newCategory.label, payload.newCategory.icon);
       else ensureExpenseCategory(payload.catId, payload.newCategory.label, payload.newCategory.icon);
     }
-    if (payload.type === 'income') addIncome({ catId: payload.catId, item: { id: Date.now(), ...payload.item } });
-    else addItem({ catId: payload.catId, item: { id: Date.now(), ...payload.item } });
+    if (payload.type === 'income') addIncome({ catId: payload.catId, item: { id: generateId(), ...payload.item } });
+    else addItem({ catId: payload.catId, item: { id: generateId(), ...payload.item } });
   };
 
   const clearAllData = () => {
@@ -219,7 +264,7 @@ export default function App() {
     if (payload.id != null) {
       setNotes(ns => ns.map(n => n.id === payload.id ? { ...n, title: payload.title, day: payload.day, month: payload.month, year: payload.year } : n));
     } else {
-      setNotes(ns => [{ id: Date.now(), title: payload.title, day: payload.day, month: payload.month, year: payload.year, paid: false }, ...ns]);
+      setNotes(ns => [{ id: generateId(), title: payload.title, day: payload.day, month: payload.month, year: payload.year, paid: false }, ...ns]);
     }
   };
   const deleteNote = (id: number) => {
