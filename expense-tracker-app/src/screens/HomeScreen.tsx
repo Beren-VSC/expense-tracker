@@ -308,7 +308,8 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
             {sortedIncCats.map(cat => {
               const total = cat.items.reduce((s, i) => s + i.amt, 0);
               const balance = computeAccountBalance(cat, cats, transfers);
-              const spentFromAccount = total - balance;
+              // ต่างจาก total เมื่อไหร่ก็ตาม (ไม่ว่าจะน้อยลงเพราะจ่าย/โอนออก หรือมากขึ้นเพราะโอนเข้า) ต้องโชว์ให้เห็น
+              const balanceDiffersFromTotal = Math.round(balance * 100) !== Math.round(total * 100);
               const isOpen = !!incomeOpen[cat.id];
               return (
                 <View key={cat.id}>
@@ -324,7 +325,7 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
                       </View>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
                         <Text style={s.catSub}>{cat.items.length} รายการ</Text>
-                        {spentFromAccount > 0 && (
+                        {balanceDiffersFromTotal && (
                           <Text style={{ fontSize: 11, color: COLORS.textDim }}>คงเหลือ {fmt(balance)}</Text>
                         )}
                       </View>
