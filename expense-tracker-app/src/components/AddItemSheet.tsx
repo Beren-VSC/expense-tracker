@@ -159,6 +159,9 @@ export default function AddItemSheet({
                       </View>
                     </ScrollView>
                   )}
+                  {!accountId && incomeCats.length > 0 && (
+                    <Text style={{ fontSize: 11, color: COLORS.danger }}>⚠ ต้องเลือกบัญชีที่ใช้จ่ายก่อนถึงจะบันทึกได้</Text>
+                  )}
                 </View>
               )}
 
