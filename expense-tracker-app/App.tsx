@@ -21,7 +21,7 @@ import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, ExpenseItem, IncomeCatego
 import { COLORS } from './src/theme';
 import {
   hashPin, isWebAuthnSupported, registerBiometricCredential, verifyBiometricCredential,
-  PIN_HASH_KEY, BIOMETRIC_CRED_KEY, LOCK_ENABLED_KEY,
+  PIN_HASH_KEY, BIOMETRIC_ENABLED_KEY, LOCK_ENABLED_KEY,
 } from './src/security';
 
 type Screen = 'home' | 'history';
@@ -94,7 +94,7 @@ export default function App() {
   const [lockConfigLoaded, setLockConfigLoaded] = useState(false);
   const [lockMode, setLockMode] = useState<'setup' | 'locked' | 'unlocked'>('unlocked');
   const [pinHash, setPinHash] = useState<string | null>(null);
-  const [biometricCredentialId, setBiometricCredentialId] = useState<string | null>(null);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [lockEnabled, setLockEnabled] = useState(true);
   const [lockError, setLockError] = useState<string | null>(null);
   const [showLockSettings, setShowLockSettings] = useState(false);
@@ -160,23 +160,16 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [hash, cred, enabledRaw] = await Promise.all([
+        const [hash, biometricFlag, enabledRaw] = await Promise.all([
           AsyncStorage.getItem(PIN_HASH_KEY),
-          AsyncStorage.getItem(BIOMETRIC_CRED_KEY),
+          AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY),
           AsyncStorage.getItem(LOCK_ENABLED_KEY),
         ]);
         const enabled = enabledRaw !== '0'; // ค่าเริ่มต้น = เปิด (ยังไม่เคยตั้งค่าเลยแปลว่ายังไม่เคยปิด)
         setPinHash(hash);
         setLockEnabled(enabled);
         setLockMode(!hash ? 'setup' : (enabled ? 'locked' : 'unlocked'));
-
-        // ฟีเจอร์ Face ID/Touch ID ปิดไว้ (isWebAuthnSupported() คืน false เสมอตอนนี้ — ดูเหตุผลใน src/security.ts)
-        // เจอ credential เก่าที่เคยลงทะเบียนไว้ก่อนปิดฟีเจอร์ ล้างทิ้งไปเลย กันมันค้างเฉยๆ โดยไม่มีที่ไหนใช้แล้ว
-        if (cred && !isWebAuthnSupported()) {
-          AsyncStorage.removeItem(BIOMETRIC_CRED_KEY).catch(() => {});
-        } else {
-          setBiometricCredentialId(cred);
-        }
+        setBiometricEnabled(biometricFlag === '1');
       } catch (e) {
         // อ่านการตั้งค่าล็อกไม่ได้ — ปล่อยผ่านเข้าแอปเลยดีกว่าล็อกผู้ใช้ออกจากข้อมูลตัวเอง
         console.warn('โหลดการตั้งค่าล็อกแอปไม่สำเร็จ', e);
@@ -416,10 +409,10 @@ export default function App() {
     if (isWebAuthnSupported() && Platform.OS === 'web' && typeof window !== 'undefined') {
       const wantsBiometric = window.confirm('ตั้งรหัสผ่านเรียบร้อย ✅\n\nต้องการเปิดใช้ Face ID / Touch ID เพื่อปลดล็อกแอปเร็วขึ้นด้วยไหม?');
       if (wantsBiometric) {
-        registerBiometricCredential().then(credId => {
-          if (credId) {
-            AsyncStorage.setItem(BIOMETRIC_CRED_KEY, credId).catch(() => {});
-            setBiometricCredentialId(credId);
+        registerBiometricCredential().then(ok => {
+          if (ok) {
+            AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, '1').catch(() => {});
+            setBiometricEnabled(true);
           } else {
             window.alert('ตั้งค่า Face ID / Touch ID ไม่สำเร็จ ลองใหม่ได้ภายหลังในเมนูตั้งค่าการล็อก');
           }
@@ -438,8 +431,7 @@ export default function App() {
   };
 
   const handleBiometricUnlock = async () => {
-    if (!biometricCredentialId) return;
-    const ok = await verifyBiometricCredential(biometricCredentialId);
+    const ok = await verifyBiometricCredential();
     if (ok) {
       setLockError(null);
       setLockMode('unlocked');
@@ -459,14 +451,14 @@ export default function App() {
 
   const handleToggleBiometric = (enable: boolean) => {
     if (!enable) {
-      AsyncStorage.removeItem(BIOMETRIC_CRED_KEY).catch(() => {});
-      setBiometricCredentialId(null);
+      AsyncStorage.removeItem(BIOMETRIC_ENABLED_KEY).catch(() => {});
+      setBiometricEnabled(false);
       return;
     }
-    registerBiometricCredential().then(credId => {
-      if (credId) {
-        AsyncStorage.setItem(BIOMETRIC_CRED_KEY, credId).catch(() => {});
-        setBiometricCredentialId(credId);
+    registerBiometricCredential().then(ok => {
+      if (ok) {
+        AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, '1').catch(() => {});
+        setBiometricEnabled(true);
       } else if (Platform.OS === 'web' && typeof window !== 'undefined') {
         window.alert('ตั้งค่า Face ID / Touch ID ไม่สำเร็จ');
       }
@@ -496,7 +488,7 @@ export default function App() {
             onAttemptUnlock={handleAttemptUnlock}
             // เช็ค isWebAuthnSupported() ซ้ำตรงนี้ (ไม่ใช่แค่มี credential id เก่าอยู่) — กันเบราว์เซอร์ที่ไม่นิ่ง
             // (เช่น Chrome บน iOS) เสนอปุ่มนี้ทั้งที่เคยลงทะเบียนไว้ในเบราว์เซอร์อื่น/ก่อนจะปิดฟีเจอร์นี้ไว้
-            biometric={(biometricCredentialId && isWebAuthnSupported()) ? { label: '👤 ปลดล็อกด้วย Face ID / Touch ID', onPress: handleBiometricUnlock } : null}
+            biometric={(biometricEnabled && isWebAuthnSupported()) ? { label: '👤 ปลดล็อกด้วย Face ID / Touch ID', onPress: handleBiometricUnlock } : null}
           />
         </SafeAreaProvider>
       </GestureHandlerRootView>
@@ -619,7 +611,7 @@ export default function App() {
         <LockSettingsSheet
           visible={showLockSettings}
           biometricSupported={isWebAuthnSupported()}
-          biometricEnabled={!!biometricCredentialId}
+          biometricEnabled={biometricEnabled}
           lockEnabled={lockEnabled}
           verifyPin={verifyPinForSettings}
           onChangePin={handleChangePin}

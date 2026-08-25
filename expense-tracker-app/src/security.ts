@@ -10,12 +10,10 @@ export function hashPin(pin: string): string {
   return String(hash >>> 0);
 }
 
-// ปิดไว้ก่อน — ลองใช้ WebAuthn platform authenticator (Face ID/Touch ID ผ่านเบราว์เซอร์) มาสองรอบแล้ว
-// ยังพาผู้ใช้ไปติดหน้าจอ "ลงชื่อเข้า" ของเบราว์เซอร์เองซ้ำๆ (หา credential ที่เคยลงทะเบียนไว้ไม่เจอ กดอะไรก็ไม่ผ่าน)
-// เกิดซ้ำแม้ลองจำกัดไว้เฉพาะ Safari บน iOS ไปแล้วรอบหนึ่ง — ไม่มีเครื่องจริงให้ทดสอบ debug ต่อในเซสชันนี้
-// เลยปิดฟีเจอร์นี้ทั้งหมดไว้ก่อน เหลือแค่รหัสผ่าน (PIN) ซึ่งใช้งานได้ชัวร์ทุกเบราว์เซอร์
+// Face ID/Touch ID จริงๆ ทำได้แค่บนแอปเนทีฟ (expo-local-authentication) — แอปนี้ deploy เป็นเว็บ (PWA)
+// เลยใช้ WebAuthn platform authenticator ของเบราว์เซอร์แทน (รองรับเฉพาะเว็บ + ต้องเป็น HTTPS)
 export function isWebAuthnSupported(): boolean {
-  return false;
+  return typeof window !== 'undefined' && !!window.PublicKeyCredential;
 }
 
 function randomBytes(length: number): Uint8Array<ArrayBuffer> {
@@ -28,50 +26,46 @@ function randomBytes(length: number): Uint8Array<ArrayBuffer> {
   return arr;
 }
 
-function toBase64(bytes: ArrayBuffer): string {
-  let binary = '';
-  new Uint8Array(bytes).forEach(b => { binary += String.fromCharCode(b); });
-  return btoa(binary);
-}
-
-function fromBase64(b64: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-// ลงทะเบียนตัวยืนยันตัวตนของเครื่อง (Face ID/Touch ID/Windows Hello ฯลฯ) ผ่าน WebAuthn platform authenticator
-// ไม่มี backend ตรวจลายเซ็นจริง — เก็บแค่ credential id ไว้เช็คว่า "เคยลงทะเบียนไว้แล้ว" แล้วให้ OS/เบราว์เซอร์
+// ลงทะเบียน "พาสคีย์" (discoverable credential) ของเครื่อง ผูกกับ Face ID/Touch ID ผ่าน WebAuthn platform authenticator
+// รอบก่อนใช้แบบ non-discoverable (ต้องส่ง credential id เจาะจงกลับไปหาตอนปลดล็อก) แล้วเจอปัญหาหา credential ไม่เจอซ้ำๆ
+// รอบนี้เปลี่ยนมาใช้ residentKey: 'required' — เป็นพาสคีย์แบบเดียวกับที่ iOS โชว์ใน Settings > รหัสผ่าน จริงๆ
+// เก็บเป็นรายการหลักในระบบของเครื่อง (ไม่ใช่ blob ที่ผูกกับ id ที่เราส่งไปเจาะจง) มีโอกาสหาเจอตอนปลดล็อกสูงกว่ามาก
+// ไม่มี backend ตรวจลายเซ็นจริง — แค่เช็คว่า navigator.credentials.create()/.get() สำเร็จหรือเปล่า ให้ OS/เบราว์เซอร์
 // เป็นคนยืนยันตัวตนเองทั้งหมด (เพียงพอสำหรับปลดล็อกแอปส่วนตัว ไม่ใช่ระบบยืนยันตัวตนแบบมีเซิร์ฟเวอร์ตรวจสอบ)
-export async function registerBiometricCredential(): Promise<string | null> {
-  if (!isWebAuthnSupported()) return null;
+export async function registerBiometricCredential(): Promise<boolean> {
+  if (!isWebAuthnSupported()) return false;
   try {
     const cred = await navigator.credentials.create({
       publicKey: {
         challenge: randomBytes(32),
-        rp: { name: 'Expense Tracker' },
+        rp: { id: window.location.hostname, name: 'Expense Tracker' },
         user: { id: randomBytes(16), name: 'expense-tracker-user', displayName: 'Expense Tracker' },
         pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
-        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+          residentKey: 'required',
+          requireResidentKey: true, // เผื่อเบราว์เซอร์เก่าที่ยังอ่าน field นี้แทน residentKey
+        },
         timeout: 60000,
       },
-    }) as PublicKeyCredential | null;
-    if (!cred) return null;
-    return toBase64(cred.rawId);
+    });
+    return !!cred;
   } catch (e) {
     console.warn('ลงทะเบียน Face ID/Touch ID ไม่สำเร็จ', e);
-    return null;
+    return false;
   }
 }
 
-export async function verifyBiometricCredential(credentialIdB64: string): Promise<boolean> {
+// ปลดล็อก — ไม่ระบุ allowCredentials เจาะจง ให้เบราว์เซอร์ค้นหาพาสคีย์ของ origin นี้ที่เก็บไว้เองแทน
+// (usernameless/discoverable flow — วิธีมาตรฐานสำหรับพาสคีย์ที่ลงทะเบียนแบบ residentKey: 'required' ด้านบน)
+export async function verifyBiometricCredential(): Promise<boolean> {
   if (!isWebAuthnSupported()) return false;
   try {
     const cred = await navigator.credentials.get({
       publicKey: {
         challenge: randomBytes(32),
-        allowCredentials: [{ id: fromBase64(credentialIdB64), type: 'public-key' }],
+        rpId: window.location.hostname,
         userVerification: 'required',
         timeout: 60000,
       },
@@ -85,5 +79,7 @@ export async function verifyBiometricCredential(credentialIdB64: string): Promis
 
 export const PIN_LENGTH = 6;
 export const PIN_HASH_KEY = '@expense_tracker/lock_pin_hash';
-export const BIOMETRIC_CRED_KEY = '@expense_tracker/lock_biometric_cred';
+// แค่ธง true/false ว่าเคยลงทะเบียนพาสคีย์ไว้ไหม — ไม่ต้องเก็บ credential id เจาะจงแบบรอบก่อนแล้ว
+// (เพราะตอนปลดล็อกไม่ได้ระบุ allowCredentials เจาะจง ให้เบราว์เซอร์หาพาสคีย์ของ origin นี้เอง)
+export const BIOMETRIC_ENABLED_KEY = '@expense_tracker/lock_biometric_enabled';
 export const LOCK_ENABLED_KEY = '@expense_tracker/lock_enabled';
