@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, AppState, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -13,9 +13,15 @@ import AICaptureSheet, { AiConfirmPayload } from './src/components/AICaptureShee
 import NoteSheet, { NoteSavePayload } from './src/components/NoteSheet';
 import BackupSheet, { BackupData } from './src/components/BackupSheet';
 import CategoryEditSheet, { CategoryEditTarget, CategorySavePayload } from './src/components/CategoryEditSheet';
+import LockScreen from './src/components/LockScreen';
+import LockSettingsSheet from './src/components/LockSettingsSheet';
 
 import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, ExpenseItem, IncomeCategory, NoteItem, DEFAULT_NEW_CATEGORY_BUDGET, pickNewCategoryColor, computeAccountBalance, generateId } from './src/data';
 import { COLORS } from './src/theme';
+import {
+  hashPin, isWebAuthnSupported, registerBiometricCredential, verifyBiometricCredential,
+  PIN_HASH_KEY, BIOMETRIC_CRED_KEY, LOCK_ENABLED_KEY,
+} from './src/security';
 
 type Screen = 'home' | 'history';
 
@@ -81,6 +87,15 @@ export default function App() {
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextPush = useRef(false); // กันดันข้อมูลกลับขึ้น cloud ทันทีหลังเพิ่งโหลดมันมา (เปลือง request เปล่าๆ)
 
+  // ล็อกแอปด้วยรหัสผ่าน (+ Face ID/Touch ID ถ้าเบราว์เซอร์รองรับ) — ดูรายละเอียดใน src/security.ts
+  const [lockConfigLoaded, setLockConfigLoaded] = useState(false);
+  const [lockMode, setLockMode] = useState<'setup' | 'locked' | 'unlocked'>('unlocked');
+  const [pinHash, setPinHash] = useState<string | null>(null);
+  const [biometricCredentialId, setBiometricCredentialId] = useState<string | null>(null);
+  const [lockEnabled, setLockEnabled] = useState(true);
+  const [lockError, setLockError] = useState<string | null>(null);
+  const [showLockSettings, setShowLockSettings] = useState(false);
+
   // โหลดข้อมูล — ลอง cloud ก่อนเสมอ (ข้อมูลล่าสุดข้ามเครื่อง/ลิงก์) ถ้าเรียกไม่ได้ค่อย fallback มาที่เครื่องนี้
   useEffect(() => {
     (async () => {
@@ -133,6 +148,40 @@ export default function App() {
       setIsLoaded(true);
     })();
   }, []);
+
+  // โหลดการตั้งค่าล็อกแอป — แยก effect จากข้อมูลรายรับ-รายจ่ายเพราะเป็นคนละเรื่องกัน (ไม่เกี่ยวกับ cloud sync)
+  useEffect(() => {
+    (async () => {
+      try {
+        const [hash, cred, enabledRaw] = await Promise.all([
+          AsyncStorage.getItem(PIN_HASH_KEY),
+          AsyncStorage.getItem(BIOMETRIC_CRED_KEY),
+          AsyncStorage.getItem(LOCK_ENABLED_KEY),
+        ]);
+        const enabled = enabledRaw !== '0'; // ค่าเริ่มต้น = เปิด (ยังไม่เคยตั้งค่าเลยแปลว่ายังไม่เคยปิด)
+        setPinHash(hash);
+        setBiometricCredentialId(cred);
+        setLockEnabled(enabled);
+        setLockMode(!hash ? 'setup' : (enabled ? 'locked' : 'unlocked'));
+      } catch (e) {
+        // อ่านการตั้งค่าล็อกไม่ได้ — ปล่อยผ่านเข้าแอปเลยดีกว่าล็อกผู้ใช้ออกจากข้อมูลตัวเอง
+        console.warn('โหลดการตั้งค่าล็อกแอปไม่สำเร็จ', e);
+        setLockMode('unlocked');
+      } finally {
+        setLockConfigLoaded(true);
+      }
+    })();
+  }, []);
+
+  // กลับมาล็อกอัตโนมัติเมื่อสลับแอป/พับหน้าจอไปแล้วกลับมา (เหมือนแอปธนาคาร) — เฉพาะตอนตั้งรหัสผ่านและเปิดใช้ล็อกไว้แล้ว
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'background' && pinHash && lockEnabled) {
+        setLockMode('locked');
+      }
+    });
+    return () => sub.remove();
+  }, [pinHash, lockEnabled]);
 
   // บันทึกข้อมูลทุกครั้งที่ cats/incomeCats/notes เปลี่ยน — เก็บลงเครื่อง (ทันที) + ดัน cloud (หน่วงเล็กน้อย กันยิงถี่)
   useEffect(() => {
@@ -331,10 +380,101 @@ export default function App() {
     }
   };
 
+  // ตั้งรหัสผ่านครั้งแรก — เสนอเปิด Face ID/Touch ID ต่อทันทีถ้าเบราว์เซอร์รองรับ (ปฏิเสธได้ ไม่บังคับ)
+  const handleSetupComplete = (pin: string) => {
+    const hash = hashPin(pin);
+    AsyncStorage.setItem(PIN_HASH_KEY, hash).catch(e => console.warn('บันทึกรหัสผ่านไม่สำเร็จ', e));
+    AsyncStorage.setItem(LOCK_ENABLED_KEY, '1').catch(() => {});
+    setPinHash(hash);
+    setLockEnabled(true);
+    setLockMode('unlocked');
+
+    if (isWebAuthnSupported() && Platform.OS === 'web' && typeof window !== 'undefined') {
+      const wantsBiometric = window.confirm('ตั้งรหัสผ่านเรียบร้อย ✅\n\nต้องการเปิดใช้ Face ID / Touch ID เพื่อปลดล็อกแอปเร็วขึ้นด้วยไหม?');
+      if (wantsBiometric) {
+        registerBiometricCredential().then(credId => {
+          if (credId) {
+            AsyncStorage.setItem(BIOMETRIC_CRED_KEY, credId).catch(() => {});
+            setBiometricCredentialId(credId);
+          } else {
+            window.alert('ตั้งค่า Face ID / Touch ID ไม่สำเร็จ ลองใหม่ได้ภายหลังในเมนูตั้งค่าการล็อก');
+          }
+        });
+      }
+    }
+  };
+
+  const handleAttemptUnlock = (pin: string) => {
+    if (pinHash && hashPin(pin) === pinHash) {
+      setLockError(null);
+      setLockMode('unlocked');
+    } else {
+      setLockError('รหัสผ่านไม่ถูกต้อง');
+    }
+  };
+
+  const handleBiometricUnlock = async () => {
+    if (!biometricCredentialId) return;
+    const ok = await verifyBiometricCredential(biometricCredentialId);
+    if (ok) {
+      setLockError(null);
+      setLockMode('unlocked');
+    } else {
+      setLockError('ยืนยันตัวตนไม่สำเร็จ ลองใหม่หรือใส่รหัสผ่านแทน');
+    }
+  };
+
+  // เมนูตั้งค่าล็อก (เปลี่ยนรหัส/เปิดปิด biometric/เปิดปิดการล็อก) — ต้องใส่รหัสผ่านปัจจุบันถูกก่อนเสมอ
+  const verifyPinForSettings = (pin: string) => !!pinHash && hashPin(pin) === pinHash;
+
+  const handleChangePin = (newPin: string) => {
+    const hash = hashPin(newPin);
+    AsyncStorage.setItem(PIN_HASH_KEY, hash).catch(e => console.warn('บันทึกรหัสผ่านไม่สำเร็จ', e));
+    setPinHash(hash);
+  };
+
+  const handleToggleBiometric = (enable: boolean) => {
+    if (!enable) {
+      AsyncStorage.removeItem(BIOMETRIC_CRED_KEY).catch(() => {});
+      setBiometricCredentialId(null);
+      return;
+    }
+    registerBiometricCredential().then(credId => {
+      if (credId) {
+        AsyncStorage.setItem(BIOMETRIC_CRED_KEY, credId).catch(() => {});
+        setBiometricCredentialId(credId);
+      } else if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert('ตั้งค่า Face ID / Touch ID ไม่สำเร็จ');
+      }
+    });
+  };
+
+  const handleToggleLockEnabled = (enable: boolean) => {
+    AsyncStorage.setItem(LOCK_ENABLED_KEY, enable ? '1' : '0').catch(() => {});
+    setLockEnabled(enable);
+  };
+
   const activeCat = catId ? cats.find(c => c.id === catId) ?? null : null;
 
-  if (!isLoaded) {
+  if (!isLoaded || !lockConfigLoaded) {
     return <View style={{ flex: 1, backgroundColor: COLORS.bg }} />;
+  }
+
+  if (lockMode !== 'unlocked') {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <StatusBar style="dark" />
+          <LockScreen
+            mode={lockMode === 'setup' ? 'setup' : 'unlock'}
+            error={lockError}
+            onSetupComplete={handleSetupComplete}
+            onAttemptUnlock={handleAttemptUnlock}
+            biometric={biometricCredentialId ? { label: '👤 ปลดล็อกด้วย Face ID / Touch ID', onPress: handleBiometricUnlock } : null}
+          />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
   }
 
   return (
@@ -370,6 +510,7 @@ export default function App() {
               onClearAll={clearAllData}
               onBackup={() => setShowBackupSheet(true)}
               onEditCategory={openEditCategory}
+              onOpenLockSettings={() => setShowLockSettings(true)}
               syncStatus={syncStatus}
             />
           )}
@@ -433,6 +574,18 @@ export default function App() {
           onSave={saveCategoryEdit}
           onDelete={deleteCategory}
           onClose={closeEditCategory}
+        />
+
+        <LockSettingsSheet
+          visible={showLockSettings}
+          biometricSupported={isWebAuthnSupported()}
+          biometricEnabled={!!biometricCredentialId}
+          lockEnabled={lockEnabled}
+          verifyPin={verifyPinForSettings}
+          onChangePin={handleChangePin}
+          onToggleBiometric={handleToggleBiometric}
+          onToggleLockEnabled={handleToggleLockEnabled}
+          onClose={() => setShowLockSettings(false)}
         />
       </SafeAreaProvider>
     </GestureHandlerRootView>

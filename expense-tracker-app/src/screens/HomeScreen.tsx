@@ -23,10 +23,11 @@ interface Props {
   onClearAll: () => void;
   onBackup: () => void;
   onEditCategory: (type: 'expense' | 'income', catId: string) => void;
+  onOpenLockSettings: () => void;
   syncStatus: 'idle' | 'syncing' | 'error';
 }
 
-export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, onCat, onAdd, onItemPress, onClearAll, onBackup, onEditCategory, syncStatus }: Props) {
+export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, onCat, onAdd, onItemPress, onClearAll, onBackup, onEditCategory, onOpenLockSettings, syncStatus }: Props) {
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<'expense' | 'income'>('expense');
   const [mo, setMo] = useState(() => new Date().getMonth()); // เดือนปัจจุบันจริงเป็นค่าเริ่มต้นเสมอ
@@ -94,6 +95,11 @@ export default function HomeScreen({ cats, incomeCats, totalSpent, totalIncome, 
         {/* สำรอง/กู้คืนข้อมูล — ย้ายข้อมูลข้ามลิงก์เมื่อ URL เปลี่ยน */}
         <TouchableOpacity onPress={onBackup} hitSlop={10} style={[s.clearBtn, { top: insets.top + 4, right: 52 }]}>
           <Text style={{ fontSize: 14 }}>💾</Text>
+        </TouchableOpacity>
+
+        {/* ตั้งค่าล็อกแอป (รหัสผ่าน + Face ID/Touch ID) */}
+        <TouchableOpacity onPress={onOpenLockSettings} hitSlop={10} style={[s.clearBtn, { top: insets.top + 4, right: 88 }]}>
+          <Text style={{ fontSize: 14 }}>🔒</Text>
         </TouchableOpacity>
 
         {/* Month switcher */}
