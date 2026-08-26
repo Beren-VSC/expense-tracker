@@ -21,7 +21,7 @@ import { INIT_CATS, INIT_INCOME_CATS, ExpenseCategory, ExpenseItem, IncomeCatego
 import { COLORS } from './src/theme';
 import {
   hashPin, isBiometricAvailable, enableBiometricUnlock, authenticateWithBiometrics,
-  PIN_HASH_KEY, BIOMETRIC_ENABLED_KEY, LOCK_ENABLED_KEY,
+  getLastWebAuthnError, PIN_HASH_KEY, BIOMETRIC_ENABLED_KEY, LOCK_ENABLED_KEY,
 } from './src/security';
 
 type Screen = 'home' | 'history';
@@ -419,7 +419,8 @@ export default function App() {
         AsyncStorage.setItem(BIOMETRIC_ENABLED_KEY, '1').catch(() => {});
         setBiometricEnabled(true);
       } else {
-        notify('เปิดใช้ Face ID / Touch ID ไม่สำเร็จ', 'ลองใหม่ได้ภายหลังในเมนูตั้งค่าการล็อก');
+        const detail = Platform.OS === 'web' ? getLastWebAuthnError() : null;
+        notify('เปิดใช้ Face ID / Touch ID ไม่สำเร็จ', `ลองใหม่ได้ภายหลังในเมนูตั้งค่าการล็อก${detail ? `\n(${detail})` : ''}`);
       }
       onDone?.();
     });
@@ -463,7 +464,9 @@ export default function App() {
       setLockError(null);
       setLockMode('unlocked');
     } else {
-      setLockError('ยืนยันตัวตนไม่สำเร็จ ลองใหม่หรือใส่รหัสผ่านแทน');
+      // ต่อท้ายชื่อ error ดิบจาก WebAuthn (ถ้ามี) ไว้ในข้อความ ช่วยวินิจฉัยได้โดยไม่ต้องเปิด dev console
+      const detail = Platform.OS === 'web' ? getLastWebAuthnError() : null;
+      setLockError(`ยืนยันตัวตนไม่สำเร็จ ลองใหม่หรือใส่รหัสผ่านแทน${detail ? `\n(${detail})` : ''}`);
     }
   };
 

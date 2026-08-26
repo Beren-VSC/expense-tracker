@@ -30,6 +30,14 @@ function randomBytes(length: number): Uint8Array<ArrayBuffer> {
   return arr;
 }
 
+// เก็บชื่อ error ล่าสุดจาก WebAuthn ไว้ให้ App.tsx โชว์ต่อท้ายข้อความแจ้งเตือน
+// เพื่อวินิจฉัยง่ายขึ้นตอนพัง (เช่น NotAllowedError, InvalidStateError, SecurityError)
+// โดยไม่ต้องเปิด dev console บนมือถือ
+let lastWebAuthnError: string | null = null;
+export function getLastWebAuthnError(): string | null {
+  return lastWebAuthnError;
+}
+
 async function webAuthnRegister(): Promise<boolean> {
   try {
     const cred = await navigator.credentials.create({
@@ -47,8 +55,10 @@ async function webAuthnRegister(): Promise<boolean> {
         timeout: 60000,
       },
     });
+    lastWebAuthnError = null;
     return !!cred;
-  } catch (e) {
+  } catch (e: any) {
+    lastWebAuthnError = e?.name ? `${e.name}: ${e.message ?? ''}`.trim() : String(e);
     console.warn('ลงทะเบียน Face ID/Touch ID (WebAuthn) ไม่สำเร็จ', e);
     return false;
   }
@@ -65,8 +75,10 @@ async function webAuthnAuthenticate(): Promise<boolean> {
         timeout: 60000,
       },
     });
+    lastWebAuthnError = null;
     return !!cred;
-  } catch (e) {
+  } catch (e: any) {
+    lastWebAuthnError = e?.name ? `${e.name}: ${e.message ?? ''}`.trim() : String(e);
     console.warn('ยืนยันตัวตนด้วย Face ID/Touch ID (WebAuthn) ไม่สำเร็จ', e);
     return false;
   }
