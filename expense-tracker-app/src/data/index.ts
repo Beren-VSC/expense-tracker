@@ -59,17 +59,6 @@ export interface NoteItem {
   paid: boolean;
 }
 
-export interface MonthHistory {
-  label: string;
-  spent: number;
-  budget: number;
-}
-
-export interface IncomeHistory {
-  label: string;
-  income: number;
-}
-
 // ล้างรายการตัวอย่าง (mock) ออกทั้งหมด — เหลือแค่โครงหมวดหมู่ไว้ รอข้อมูลจริงจาก AI capture
 export const INIT_CATS: ExpenseCategory[] = [
   { id: 'food', name: 'Food & Dining', th: 'อาหาร', icon: '🍜', color: '#f4875a', budget: 6000, spent: 0, count: 0, items: [] },
@@ -90,10 +79,6 @@ export const INIT_INCOME_CATS: IncomeCategory[] = [
   { id: 'family', name: 'Family', th: 'ครอบครัว', icon: '🏦', color: '#818cf8', items: [] },
   { id: 'parttime', name: 'Part-time', th: 'พาร์ทไทม์', icon: '🎯', color: '#f59e0b', items: [] },
 ];
-
-export const HISTORY: MonthHistory[] = [];
-
-export const INCOME_HISTORY: IncomeHistory[] = [];
 
 export const MONTHS = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',

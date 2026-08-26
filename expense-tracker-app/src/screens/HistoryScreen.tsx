@@ -1,9 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Bar from '../components/Bar';
 import {
-  ExpenseCategory, IncomeCategory, NoteItem, fmt, HISTORY, INCOME_HISTORY,
+  ExpenseCategory, IncomeCategory, NoteItem, fmt,
   MONTHS, MONTHS_SHORT, getCurrentBuddhistYear, getDaysInMonth, getFirstWeekdayMonFirst,
 } from '../data';
 import { COLORS, SHADOW } from '../theme';
@@ -240,35 +239,6 @@ export default function HistoryScreen({ cats, incomeCats, notes, onAddNote, onEd
           </View>
         )}
 
-        {/* Previous months */}
-        <Text style={s.prevLabel}>เดือนก่อนหน้า</Text>
-        {view === 'expense'
-          ? [...HISTORY].reverse().map((m, i) => {
-              const over = m.spent > m.budget;
-              return (
-                <View key={i} style={[s.monthCard, SHADOW]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.text }}>{m.label} {getCurrentBuddhistYear(year)}</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: over ? COLORS.danger : COLORS.text }}>{fmt(m.spent)}</Text>
-                  </View>
-                  <Bar pct={m.spent / m.budget * 100} color={over ? COLORS.danger : COLORS.accent} bg={COLORS.surfaceAlt} />
-                  <Text style={{ fontSize: 10, color: COLORS.textDim, textAlign: 'right', marginTop: 3 }}>งบ {fmt(m.budget)}</Text>
-                </View>
-              );
-            })
-          : (() => {
-              const maxInc = Math.max(...INCOME_HISTORY.map(x => x.income));
-              return [...INCOME_HISTORY].reverse().map((m, i) => (
-                <View key={i} style={[s.monthCard, SHADOW]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.text }}>{m.label} {getCurrentBuddhistYear(year)}</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.income }}>+{fmt(m.income)}</Text>
-                  </View>
-                  <Bar pct={m.income / maxInc * 100} color={COLORS.income} bg={COLORS.surfaceAlt} />
-                </View>
-              ));
-            })()
-        }
       </ScrollView>
     </View>
   );
@@ -290,6 +260,4 @@ const s = StyleSheet.create({
   noteRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderColor: COLORS.border },
   paidDropdownHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, marginTop: 2, borderTopWidth: 1, borderColor: COLORS.border },
   dayDetail: { marginHorizontal: 14, marginTop: 10, backgroundColor: COLORS.surface, borderRadius: 12, padding: 12 },
-  prevLabel: { fontSize: 11, fontWeight: '600', color: COLORS.textMid, textTransform: 'uppercase', letterSpacing: 0.6, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
-  monthCard: { marginHorizontal: 14, marginBottom: 8, backgroundColor: COLORS.surface, borderRadius: 12, padding: 12 },
 });
