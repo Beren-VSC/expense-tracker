@@ -384,9 +384,12 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
               );
             })}
 
+            {/* ยอดรวมคงเหลือของทุกบัญชี (ไม่ใช่ยอดรับดิบ) — ให้ตรงกับตัวเลขที่โชว์ในลิสต์ด้านบนเมื่อบวกกัน */}
             <View style={[s.totalCard, { backgroundColor: COLORS.income }]}>
-              <Text style={{ fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.7)' }}>รายรับทั้งหมด</Text>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff' }}>+{fmt(totalIncome)}</Text>
+              <Text style={{ fontSize: 14, fontWeight: '500', color: 'rgba(255,255,255,0.7)' }}>คงเหลือทั้งหมด</Text>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#fff' }}>
+                {incTotal < 0 ? '-' : '+'}{fmt(Math.abs(incTotal))}
+              </Text>
             </View>
           </>
         )}
